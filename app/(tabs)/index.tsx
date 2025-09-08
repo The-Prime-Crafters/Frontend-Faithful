@@ -1,20 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    FlatList,
-    LayoutAnimation,
-    Platform, SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    UIManager,
-    View
+  Animated,
+  Dimensions,
+  Easing,
+  FlatList,
+  LayoutAnimation,
+  Platform, SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  UIManager,
+  View
 } from 'react-native';
 
 /* ───── Constants ───── */
@@ -34,9 +35,6 @@ const STATUS_BAR_OFFSET = Platform.OS === 'android'
   : 10;
 
 /* Mock data */
-const streakDates     = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const currentDayIndex = 3;
-const progressPercent = Math.round(((currentDayIndex + 1) / streakDates.length) * 100);
 const cardsData = [
   { 
     id: '1', 
@@ -98,6 +96,9 @@ export default function HomeScreen() {
   const [showReadModal, setShowReadModal] = useState(false);
   const [currentReadContent, setCurrentReadContent] = useState('');
   const [currentReadTitle, setCurrentReadTitle] = useState('');
+  
+
+  
   const searchWidth   = useRef(new Animated.Value(0)).current;
 
   /* ───── Local Search ───── */
@@ -153,9 +154,11 @@ export default function HomeScreen() {
     console.log(`Listen functionality for: ${cardTitle} - to be implemented`);
   };
 
-  const todayLabel = new Date().toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+
+
+
+
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -227,42 +230,9 @@ export default function HomeScreen() {
           contentContainerStyle={styles.contentContainer}
           ListHeaderComponent={
             <>
-              {/* Streak circles */}
-              <View style={styles.streakContainer}>
-                {streakDates.map((d, idx) => {
-                  const isPast  = idx < currentDayIndex;
-                  const isToday = idx === currentDayIndex;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.dayCircle,
-                        isToday && styles.todayCircle,
-                        isPast  && styles.pastCircle,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.dayText,
-                          isToday && styles.todayText,
-                          isPast  && styles.pastText,
-                        ]}
-                      >
-                        {d}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
 
-              {/* Progress bar */}
-              <View style={styles.progressHeader}>
-                <Text style={styles.progressLabel}>Progress for {todayLabel}</Text>
-                <Text style={styles.progressPercent}>{progressPercent}%</Text>
-              </View>
-              <View style={styles.progressLineContainer}>
-                <View style={[styles.progressLine, { width: `${progressPercent}%` }]} />
-              </View>
+              
+
             </>
           }
           renderItem={({ item }) => {
@@ -382,32 +352,9 @@ const styles = StyleSheet.create({
   /* Body content */
   contentContainer: { paddingBottom: 30 },
 
-  /* Streak circles */
-  streakContainer: {
-    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10,
-  },
-  dayCircle: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: SOFT_GRAY, alignItems: 'center', justifyContent: 'center',
-  },
-  todayCircle: { backgroundColor: LIGHT_PURPLE },
-  pastCircle:  { backgroundColor: LIGHT_PURPLE },
-  dayText:   { color: BLACK, fontFamily: 'serif', fontWeight: 'bold' },
-  todayText: { color: WHITE },
-  pastText:  { color: 'rgba(0,0,0,0.8)' },
 
-  /* Progress */
-  progressHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 4,
-  },
-  progressLabel:   { color: BLACK, fontFamily: 'serif', fontSize: 14 },
-  progressPercent: { color: BLACK, fontFamily: 'serif', fontWeight: 'bold', fontSize: 14 },
-  progressLineContainer: {
-    height: 4, borderRadius: 2, marginBottom: 20,
-    overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  progressLine: { height: '100%', backgroundColor: BLACK },
+
+
 
   /* Cards */
   cardBase: {

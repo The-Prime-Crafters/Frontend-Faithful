@@ -1,7 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
+import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
+  Image,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -43,9 +47,85 @@ const menuItems = [
 ];
 
 export default function ProfileScreen() {
+  const [userData, setUserData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const userDataString = await SecureStore.getItemAsync('userData');
+      if (userDataString) {
+        const user = JSON.parse(userDataString);
+        setUserData(user);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out? You will need to sign in again to access your account.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Clear all authentication data
+              await SecureStore.deleteItemAsync('authToken');
+              await SecureStore.deleteItemAsync('userData');
+              await SecureStore.deleteItemAsync('userUsageData');
+              
+              // Log the logout action
+              console.log('🔐 User signed out successfully');
+              console.log('🗑️ Auth token cleared');
+              console.log('🗑️ User data cleared');
+              console.log('🗑️ Usage data cleared');
+              
+              // Clear local state
+              setUserData(null);
+              
+              // Redirect to onboarding screen
+              router.replace('/(main)/onboarding');
+              
+            } catch (error) {
+              console.error('❌ Error during sign out:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+              <ScrollView 
+          style={styles.container} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 120 }}
+        >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Profile</Text>
@@ -62,11 +142,31 @@ export default function ProfileScreen() {
           style={styles.profileCard}
         >
           <View style={styles.profileImage}>
-            <Ionicons name="person" size={40} color={PRIMARY_COLOR} />
+            {userData?.picture ? (
+              <Image 
+                source={{ uri: userData.picture }} 
+                style={styles.profileImageInner}
+                resizeMode="cover"
+              />
+            ) : (
+              <Ionicons name="person" size={40} color={PRIMARY_COLOR} />
+            )}
           </View>
-          <Text style={styles.profileName}>John Doe</Text>
-          <Text style={styles.profileEmail}>john.doe@example.com</Text>
-          <Text style={styles.memberSince}>Member since January 2024</Text>
+          <Text style={styles.profileName}>
+            {userData?.name || 'User'}
+          </Text>
+          <Text style={styles.profileEmail}>
+            {userData?.email || 'user@example.com'}
+          </Text>
+          <Text style={styles.memberSince}>
+            Member since {userData?.signUpDate ? 
+              new Date(userData.signUpDate).toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long' 
+              }) : 
+              new Date().getFullYear()
+            }
+          </Text>
         </LinearGradient>
 
         {/* Stats Grid */}
@@ -101,7 +201,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out" size={20} color={WHITE} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
@@ -148,7 +248,12 @@ const styles = StyleSheet.create({
     backgroundColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  profileImageInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   profileName: {
     color: WHITE,
@@ -244,12 +349,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#dc3545', // Red background for sign out
     borderRadius: 12,
     padding: 16,
-    marginBottom: 30,
+    marginBottom: 100, // Increased margin to clear tab bar
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#c82333',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   logoutText: {
     color: WHITE,
@@ -257,5 +367,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: 'serif',
     marginLeft: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: OFF_WHITE,
+  },
+  loadingText: {
+    color: DARK_GRAY,
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'serif',
   },
 }); 
