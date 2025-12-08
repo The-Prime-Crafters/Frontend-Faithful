@@ -14,7 +14,8 @@ export default function NextQuestionScreen() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
 
   const handleContinue = () => {
-    router.push('/(main)/homescreen');
+    // Navigate to main app (tabs) after onboarding
+    router.replace('/(tabs)');
   };
 
   return (

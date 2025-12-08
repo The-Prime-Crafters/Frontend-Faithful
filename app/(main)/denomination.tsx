@@ -1,17 +1,22 @@
+import BackButton from '@/components/BackButton';
+import { API_ENDPOINTS } from '@/constants/API';
+import { useLoading } from '@/contexts/LoadingContext';
+import { apiPut, parseJsonResponse } from '@/utils/apiClient';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Dimensions,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -31,26 +36,53 @@ const STATUS_BAR_OFFSET = Platform.OS === 'android'
   : 10;
 
 const denominations = [
-  { id: '1', name: 'Roman Catholic Church', icon: 'business' },
-  { id: '2', name: 'Eastern Orthodox Church', icon: 'business' },
-  { id: '3', name: 'Anglican Communion', icon: 'business' },
-  { id: '4', name: 'Baptist Churches', icon: 'business' },
-  { id: '5', name: 'Lutheran Churches', icon: 'business' },
-  { id: '6', name: 'Methodist Churches', icon: 'business' },
-  { id: '7', name: 'Pentecostalism', icon: 'business' },
-  { id: '8', name: 'Presbyterian and Reformed Churches', icon: 'business' },
-  { id: '9', name: 'Seventh-day Adventist Church', icon: 'business' },
-  { id: '10', name: 'Jehovah\'s Witnesses', icon: 'business' },
+  { id: '1', name: 'Catholic', icon: 'business', description: 'Roman Catholic & Eastern Orthodox' },
+  { id: '2', name: 'Evangelical', icon: 'business', description: 'Baptist, Pentecostal, Non-denominational' },
+  { id: '3', name: 'Methodist', icon: 'business', description: 'United Methodist & Wesleyan' },
+  { id: '4', name: 'Adventist', icon: 'business', description: 'Seventh-day Adventist & Related' },
+  { id: '5', name: 'Lutheran', icon: 'business', description: 'ELCA, LCMS & Other Lutheran' },
+  { id: '6', name: 'Presbyterian', icon: 'business', description: 'Presbyterian & Reformed Churches' },
+  { id: '7', name: 'Anglican', icon: 'business', description: 'Episcopal & Anglican Communion' },
+  { id: '8', name: 'Other', icon: 'business', description: 'Other Christian Denominations' },
 ];
 
 export default function DenominationScreen() {
   const [selectedDenomination, setSelectedDenomination] = useState<string | null>(null);
   const router = useRouter();
+  const { showLoading, hideLoading } = useLoading();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedDenomination) {
-      // Here you could save the selected denomination to user preferences
-      router.push('/(main)/bible-version');
+      try {
+        showLoading('Saving preferences...');
+
+        // Get the denomination name from the selected ID
+        const denomination = denominations.find(d => d.id === selectedDenomination);
+        
+        // Save user preferences using the new API client
+        // It automatically handles auth tokens and 403 errors!
+        const response = await apiPut(
+          API_ENDPOINTS.USERS_PREFERENCES,
+          {
+            denomination: denomination?.name || 'Not specified',
+            bibleVersion: 'KJV', // Default, will be updated in bible-version screen
+            ageGroup: 'Not specified', // Will be updated in age-group screen
+            referralSource: 'Not specified', // Will be updated in referral-source screen
+            bibleAnswers: 'Not specified', // Will be updated in bible-answers screen
+            bibleSpecific: 'Not specified', // Will be updated in bible-specific screen
+          }
+        );
+
+        await parseJsonResponse(response);
+
+        console.log('✅ User preferences saved successfully');
+        router.push('/(main)/bible-version');
+      } catch (error) {
+        console.error('❌ Error saving preferences:', error);
+        Alert.alert('Error', error instanceof Error ? error.message : 'Failed to save preferences');
+      } finally {
+        hideLoading();
+      }
     }
   };
 
@@ -62,6 +94,12 @@ export default function DenominationScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Choose Your Denomination</Text>
@@ -98,12 +136,20 @@ export default function DenominationScreen() {
                       color={WHITE} 
                     />
                   </View>
-                  <Text style={[
-                    styles.denominationName,
-                    selectedDenomination === denomination.id && styles.selectedText
-                  ]}>
-                    {denomination.name}
-                  </Text>
+                  <View style={styles.textContainer}>
+                    <Text style={[
+                      styles.denominationName,
+                      selectedDenomination === denomination.id && styles.selectedText
+                    ]}>
+                      {denomination.name}
+                    </Text>
+                    <Text style={[
+                      styles.denominationDescription,
+                      selectedDenomination === denomination.id && styles.selectedDescriptionText
+                    ]}>
+                      {denomination.description}
+                    </Text>
+                  </View>
                   {selectedDenomination === denomination.id && (
                     <Ionicons name="checkmark-circle" size={24} color={WHITE} />
                   )}
@@ -133,13 +179,6 @@ export default function DenominationScreen() {
               size={20} 
               color={selectedDenomination ? WHITE : SOFT_GRAY} 
             />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.skipButton}
-            onPress={() => router.push('/(main)/bible-version')}
-          >
-            <Text style={styles.skipButtonText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -230,15 +269,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 15,
   },
-  denominationName: {
+  textContainer: {
     flex: 1,
+    marginRight: 10,
+  },
+  denominationName: {
     fontSize: 16,
     color: WHITE,
     fontFamily: 'serif',
     fontWeight: '500',
+    marginBottom: 4,
+  },
+  denominationDescription: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontFamily: 'serif',
+    lineHeight: 16,
   },
   selectedText: {
     fontWeight: 'bold',
+  },
+  selectedDescriptionText: {
+    color: 'rgba(255, 255, 255, 0.9)',
   },
   footer: {
     paddingVertical: 20,
@@ -266,13 +318,8 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: SOFT_GRAY,
   },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  skipButtonText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 16,
-    fontFamily: 'serif',
+  backButton: {
+    top: 50,
+    left: 20,
   },
 }); 

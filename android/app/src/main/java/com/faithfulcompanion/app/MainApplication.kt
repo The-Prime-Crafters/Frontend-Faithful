@@ -1,4 +1,4 @@
-package com.yourcompany.faithfulcompanion
+package com.faithfulcompanion.app
 
 import android.app.Application
 import android.content.res.Configuration

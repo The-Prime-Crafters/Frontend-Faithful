@@ -3,45 +3,79 @@
     "name": "faithful-companion",
     "slug": "faithful-companion",
     "version": "1.0.0",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "faithfulcompanion",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "jsEngine": "jsc",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.faithfulcompanion",
+      "bundleIdentifier": "com.faithfulcompanion.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "faithfulcompanion",
+            "CFBundleURLSchemes": [
+              "faithfulcompanion"
+            ]
+          }
+        ]
       }
     },
     "android": {
-      "package": "com.yourcompany.faithfulcompanion",
+      "package": "com.faithfulcompanion.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "faithfulcompanion"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "notification": {
+      "icon": "./assets/images/icon.png",
+      "color": "#7B4D62",
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new updates"
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/logo.png"
     },
     "plugins": [
       "expo-router",
+      "expo-splash-screen",
+      "expo-secure-store",
       [
-        "expo-splash-screen",
+        "expo-notifications",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "icon": "./assets/images/icon.png",
+          "color": "#7b4d62",
+          "sounds": []
         }
-      ],
-      "expo-secure-store"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -49,7 +83,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "43c75c5d-c4ad-40f2-b64b-5ca6cfa33d07"
+        "projectId": "YOUR_PROJECT_ID_HERE"
       }
     }
   }

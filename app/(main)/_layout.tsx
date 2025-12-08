@@ -10,8 +10,8 @@ export default function MainLayout() {
         presentation: 'modal'
       }}
     >
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="denomination" />
-      <Stack.Screen name="homescreen" />
       <Stack.Screen name="nextquestion" />
       <Stack.Screen name="chatscreen" />
       <Stack.Screen name="testimonialscreen2" />

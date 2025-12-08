@@ -20,23 +20,23 @@ const WHITE = '#FFFFFF';
 const testimonials = [
   {
     id: 1,
-    text: 'This app helped me find peace during my darkest days. The daily verses feel like they were chosen just for me.',
-    author: 'Michael T.',
-    location: 'New York, USA',
+    text: 'The prayer community in Faithful has been a lifeline during my cancer treatment. Knowing others are praying for me gives me strength I never knew I had.',
+    author: 'David Chen',
+    location: 'Seattle, USA',
     rating: 5,
   },
   {
     id: 2,
-    text: "I've tried many devotionals but none speak to my soul like this one. The insights are profound yet simple.",
-    author: 'Sarah K.',
-    location: 'London, UK',
-    rating: 4,
+    text: "As a new Christian, Faithful's personalized devotions help me understand God's word in ways that make sense to my life. The AI guidance feels like having a wise mentor.",
+    author: 'Aisha Patel',
+    location: 'Mumbai, India',
+    rating: 5,
   },
   {
     id: 3,
-    text: 'As a busy mom, I love the short but powerful messages. They keep me centered throughout my chaotic days.',
-    author: 'Jessica L.',
-    location: 'Toronto, Canada',
+    text: 'I was skeptical about digital faith tools, but Faithful changed my mind. The study groups and prayer requests have connected me with believers worldwide.',
+    author: 'James Thompson',
+    location: 'Melbourne, Australia',
     rating: 5,
   },
 ];
@@ -99,7 +99,7 @@ export default function TestimonialScreen() {
 
   const currentTestimonial = testimonials[currentIndex];
 
-  const renderStars = (rating) => {
+  const renderStars = (rating: number) => {
     return (
       <View style={styles.starsRow}>
         {[1, 2, 3, 4, 5].map(i => (
@@ -124,8 +124,8 @@ export default function TestimonialScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>What Our Users Say</Text>
-        <Text style={styles.headerSubtitle}>Real testimonials from real people</Text>
+        <Text style={styles.headerTitle}>Stories of Faith</Text>
+        <Text style={styles.headerSubtitle}>Real believers sharing their journey with God</Text>
       </View>
 
       {/* Testimonial Card */}
@@ -178,28 +178,28 @@ export default function TestimonialScreen() {
       {/* Stats Section */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>10K+</Text>
-          <Text style={styles.statLabel}>Users</Text>
+          <Text style={styles.statNumber}>15K+</Text>
+          <Text style={styles.statLabel}>Believers</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>4.8★</Text>
+          <Text style={styles.statNumber}>4.9★</Text>
           <Text style={styles.statLabel}>Rating</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>500K+</Text>
+          <Text style={styles.statNumber}>750K+</Text>
           <Text style={styles.statLabel}>Prayers</Text>
         </View>
       </View>
 
       {/* Footer */}
       <View style={styles.footer}>
-        <Text style={styles.joinText}>Join Our Community</Text>
-        <Text style={styles.subText}>Start your spiritual journey today</Text>
+        <Text style={styles.joinText}>Join Our Faith Family</Text>
+        <Text style={styles.subText}>Begin your personalized walk with Christ</Text>
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/(main)/chatscreen')}
+          onPress={() => router.push('/(main)/denomination')}
         >
           <Text style={styles.buttonText}>Continue</Text>
         </TouchableOpacity>
@@ -306,7 +306,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     marginHorizontal: 4,
-    transition: 'all 0.3s ease',
   },
 
   statsContainer: {

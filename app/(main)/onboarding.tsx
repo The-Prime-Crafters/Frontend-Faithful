@@ -1,10 +1,13 @@
+import { API_ENDPOINTS } from '@/constants/API';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import { Alert, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+// This is required for the auth session to complete properly
+WebBrowser.maybeCompleteAuthSession();
 
 const { width } = Dimensions.get('window');
 
@@ -21,74 +24,51 @@ const OnboardingScreen = () => {
     
     setIsSigningIn(true);
     try {
+      console.log('🟢🟢🟢 STARTING GOOGLE SIGN-IN 🟢🟢🟢');
+      
       // Step 1: Get OAuth URL from your API
-      const response = await fetch('https://33df0b2b10af.ngrok-free.app/api/auth/google/url?platform=mobile');
+      console.log('🔗 Fetching OAuth URL from backend...');
+      const response = await fetch(`${API_ENDPOINTS.GOOGLE_AUTH_URL}?platform=mobile`);
       const { url } = await response.json();
+      console.log('🔗 Got OAuth URL from backend');
       
       // Step 2: Open OAuth in browser with callback URL
+      console.log('📱 Opening WebBrowser for OAuth...');
+      console.log('🔗 Backend will redirect to: faithfulcompanion://auth/callback');
+      
+      // Use openAuthSessionAsync instead of openBrowserAsync for OAuth flows
+      // This properly handles the redirect back to the app
       const result = await WebBrowser.openAuthSessionAsync(
-        url, 
-        'exp://127.0.0.1:8081/--/auth/callback'
+        url,
+        'faithfulcompanion://auth/callback'
       );
       
+      console.log('✅ Auth session completed');
+      console.log('🔍 Result type:', result.type);
+      
+      // Note: The deep link handler in _layout.tsx will handle the callback
+      // and extract the token, name, email, etc. from the URL
       if (result.type === 'success') {
-        console.log('✅ OAuth session completed successfully');
-        console.log('🔗 Result URL:', result.url);
-        
-        // The backend will handle the token exchange and redirect to our callback
-        // with the JWT token in the URL parameters. The callback screen will
-        // process the token and navigate to the main app.
-        
-        // Check if the callback URL contains our auth callback
-        if (result.url.includes('/auth/callback')) {
-          console.log('🔄 Auth callback detected, processing...');
-          // The callback screen will handle the rest
-        } else {
-          // Fallback: try to extract token from URL if it's in the callback
-          const urlParams = new URLSearchParams(result.url.split('?')[1]);
-          const token = urlParams.get('token');
-          
-          if (token) {
-            console.log('🔐 JWT Token found in callback URL');
-            await SecureStore.setItemAsync('authToken', token);
-            
-            // Extract user data from URL
-            const name = urlParams.get('name');
-            const email = urlParams.get('email');
-            const picture = urlParams.get('picture');
-            const userId = urlParams.get('userId');
-            
-            if (name && email && userId) {
-              const userData = {
-                name,
-                email,
-                picture,
-                userId: parseInt(userId),
-                signUpDate: new Date().toISOString()
-              };
-              
-              await SecureStore.setItemAsync('userData', JSON.stringify(userData));
-              console.log('✅ User data stored');
-            }
-            
-            Alert.alert('Success', 'Welcome! You have been signed in successfully.');
-            router.replace('/(tabs)');
-          } else {
-            throw new Error('No token found in callback URL');
-          }
-        }
+        console.log('✅ OAuth flow completed successfully');
+        console.log('🔗 Callback URL:', result.url);
       } else if (result.type === 'cancel') {
-        console.log('User cancelled the sign-in process');
+        console.log('❌ User cancelled the OAuth flow');
+        Alert.alert('Cancelled', 'Sign in was cancelled');
+      } else {
+        console.log('⚠️ OAuth flow ended with type:', result.type);
       }
     } catch (error) {
-      console.error('Google sign-in error:', error);
-      Alert.alert('Error', 'Failed to sign in with Google. Please try again.');
+      console.error('💥💥💥 GOOGLE SIGN-IN ERROR 💥💥💥');
+      console.error('Error type:', typeof error);
+      console.error('Error message:', (error as any)?.message);
+      console.error('Error stack:', (error as any)?.stack);
+      console.error('Full error:', JSON.stringify(error, null, 2));
+      Alert.alert('Error', `Failed to sign in with Google: ${(error as any)?.message || 'Unknown error'}`);
     } finally {
+      console.log('🔄 Resetting isSigningIn state');
       setIsSigningIn(false);
     }
   };
-
-
 
   return (
     <LinearGradient
@@ -107,8 +87,8 @@ const OnboardingScreen = () => {
         </View>
 
         <View style={styles.headingContainer}>
-          <Text style={styles.heading}>Spiritual Guidance</Text>
-          <Text style={styles.subheading}>Find peace and wisdom through sacred texts</Text>
+          <Text style={styles.heading}>Faithful Companion</Text>
+          <Text style={styles.subheading}>Your personal journey of faith, growth, and community awaits</Text>
         </View>
 
         <View style={styles.card}>
@@ -117,9 +97,9 @@ const OnboardingScreen = () => {
               <AntDesign key={i} name="star" size={24} color="#FFD700" />
             ))}
           </View>
-          <Text style={styles.cardText}>Rated 4.9 by 10,000+ users</Text>
-          <Text style={styles.review}>"This app transformed my spiritual journey. The insights are profound yet accessible."</Text>
-          <Text style={styles.author}>- Sarah J.</Text>
+          <Text style={styles.cardText}>Rated 4.9 by 15,000+ believers</Text>
+          <Text style={styles.review}>"Faithful has become my daily companion. The prayer community and personalized devotions have deepened my relationship with God in ways I never expected."</Text>
+          <Text style={styles.author}>- Maria Rodriguez</Text>
         </View>
 
         <View style={styles.buttonContainer}>
@@ -135,10 +115,23 @@ const OnboardingScreen = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, styles.guestButton]}
-            onPress={() => router.push('/testimonialscreen2')}
+            style={[styles.button, styles.emailButton]}
+            onPress={() => router.push('/auth/signup')}
           >
-            <Text style={[styles.buttonText, styles.guestButtonText]}>Continue as Guest</Text>
+            <AntDesign name="mail" size={20} color={WHITE} />
+            <Text style={[styles.buttonText, styles.emailButtonText]}>
+              Sign up with Email
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.loginButton]}
+            onPress={() => router.push('/auth/login')}
+          >
+            <AntDesign name="login" size={20} color={WHITE} />
+            <Text style={[styles.buttonText, styles.loginButtonText]}>
+              Already have an account? Sign In
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -161,8 +154,8 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   logo: {
-    width: width * 0.5,
-    height: width * 0.5,
+    width: width * 0.35,
+    height: width * 0.35,
   },
   headingContainer: {
     alignItems: 'center',
@@ -227,10 +220,15 @@ const styles = StyleSheet.create({
   googleButton: {
     backgroundColor: WHITE,
   },
-  guestButton: {
+  emailButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  loginButton: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: WHITE,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   disabledButton: {
     opacity: 0.6,
@@ -243,9 +241,14 @@ const styles = StyleSheet.create({
   googleButtonText: {
     color: PRIMARY_COLOR,
   },
-  guestButtonText: {
+  emailButtonText: {
     color: WHITE,
+  },
+  loginButtonText: {
+    color: WHITE,
+    fontSize: 14,
   },
 });
 
 export default OnboardingScreen;
+

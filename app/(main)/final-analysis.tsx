@@ -1,3 +1,4 @@
+import BackButton from '@/components/BackButton';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -113,6 +114,12 @@ export default function FinalAnalysisScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         {/* Floating particles */}
         <View style={styles.particlesContainer}>
           {renderParticles()}
@@ -386,5 +393,9 @@ const styles = StyleSheet.create({
     color: PRIMARY_COLOR,
     fontFamily: 'serif',
     letterSpacing: 0.5,
+  },
+  backButton: {
+    top: 50,
+    left: 20,
   },
 });

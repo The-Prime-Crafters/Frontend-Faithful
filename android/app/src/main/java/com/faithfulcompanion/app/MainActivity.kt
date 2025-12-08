@@ -1,4 +1,4 @@
-package com.yourcompany.faithfulcompanion
+package com.faithfulcompanion.app
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
