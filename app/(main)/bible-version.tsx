@@ -1,17 +1,22 @@
+import BackButton from '@/components/BackButton';
+import { API_ENDPOINTS } from '@/constants/API';
+import { useLoading } from '@/contexts/LoadingContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import React, { useEffect, useState } from 'react';
 import {
-  Dimensions,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -31,26 +36,169 @@ const STATUS_BAR_OFFSET = Platform.OS === 'android'
   : 10;
 
 const bibleVersions = [
-  { id: '1', name: 'King James Version (KJV)', abbreviation: 'KJV', description: 'Traditional, formal English' },
-  { id: '2', name: 'New International Version (NIV)', abbreviation: 'NIV', description: 'Modern, easy to read' },
-  { id: '3', name: 'New King James Version (NKJV)', abbreviation: 'NKJV', description: 'Updated KJV language' },
-  { id: '4', name: 'English Standard Version (ESV)', abbreviation: 'ESV', description: 'Word-for-word translation' },
-  { id: '5', name: 'New American Standard Bible (NASB)', abbreviation: 'NASB', description: 'Most literal translation' },
-  { id: '6', name: 'New Living Translation (NLT)', abbreviation: 'NLT', description: 'Thought-for-thought translation' },
-  { id: '7', name: 'Christian Standard Bible (CSB)', abbreviation: 'CSB', description: 'Optimal equivalence' },
-  { id: '8', name: 'The Message (MSG)', abbreviation: 'MSG', description: 'Contemporary paraphrase' },
-  { id: '9', name: 'Amplified Bible (AMP)', abbreviation: 'AMP', description: 'Expanded meanings' },
-  { id: '10', name: 'New Revised Standard Version (NRSV)', abbreviation: 'NRSV', description: 'Scholarly translation' },
+  { 
+    id: '1', 
+    name: 'New International Version (NIV)', 
+    abbreviation: 'NIV', 
+    description: 'Modern, easy to read',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican']
+  },
+  { 
+    id: '2', 
+    name: 'New Living Translation (NLT)', 
+    abbreviation: 'NLT', 
+    description: 'Thought-for-thought translation',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Methodist', 'Baptist']
+  },
+  { 
+    id: '3', 
+    name: 'American Standard-ASV1901 (ASV)', 
+    abbreviation: 'ASV', 
+    description: 'Classic American revision',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Presbyterian', 'Baptist']
+  },
+  { 
+    id: '4', 
+    name: 'Bible in Basic English (BBE)', 
+    abbreviation: 'BBE', 
+    description: 'Simple, easy vocabulary',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Methodist']
+  },
+  { 
+    id: '5', 
+    name: 'Darby English Bible (DARBY)', 
+    abbreviation: 'DARBY', 
+    description: 'Literal translation by John Darby',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Presbyterian']
+  },
+  { 
+    id: '6', 
+    name: 'King James Version (KJV)', 
+    abbreviation: 'KJV', 
+    description: 'Traditional, formal English',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Catholic', 'Evangelical', 'Methodist', 'Lutheran', 'Presbyterian', 'Anglican']
+  },
+  { 
+    id: '7', 
+    name: 'World English Bible (WEB)', 
+    abbreviation: 'WEB', 
+    description: 'Modern English update of ASV',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Baptist', 'Methodist']
+  },
+  { 
+    id: '8', 
+    name: 'Young\'s Literal Translation (YLT)', 
+    abbreviation: 'YLT', 
+    description: 'Most literal word-for-word',
+    denominations: ['Evangelical', 'Methodist', 'Presbyterian', 'Baptist', 'Anglican', 'Catholic', 'Lutheran', 'Adventist', 'Other'],
+    recommended: ['Evangelical', 'Presbyterian']
+  },
 ];
 
 export default function BibleVersionScreen() {
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [userDenomination, setUserDenomination] = useState<string | null>(null);
+  const [filteredVersions, setFilteredVersions] = useState(bibleVersions);
   const router = useRouter();
+  const { showLoading, hideLoading } = useLoading();
 
-  const handleContinue = () => {
+  useEffect(() => {
+    loadUserDenomination();
+    // Use static versions only, no API fetch needed
+  }, []);
+
+  const loadUserDenomination = async () => {
+    try {
+      const userDataString = await SecureStore.getItemAsync('userData');
+      if (userDataString) {
+        const userData = JSON.parse(userDataString);
+        // Get denomination from the last saved preferences
+        const token = await SecureStore.getItemAsync('authToken');
+        if (token) {
+          const response = await fetch(API_ENDPOINTS.USERS_PREFERENCES, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const preferences = await response.json();
+            const denomination = preferences.data?.denomination;
+            if (denomination) {
+              setUserDenomination(denomination);
+              filterVersionsByDenomination(denomination);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user denomination:', error);
+    }
+  };
+
+  // No longer fetching from API - using static versions only
+  // Backend is only used for saving user preferences
+
+  const filterVersionsByDenomination = (denomination: string) => {
+    const filtered = bibleVersions.filter(version => 
+      version.denominations.includes(denomination)
+    );
+    setFilteredVersions(filtered);
+  };
+
+  const handleContinue = async () => {
     if (selectedVersion) {
-      // Here you could save the selected Bible version to user preferences
-      router.push('/(main)/age-group');
+      try {
+        showLoading('Updating Bible version...');
+        const token = await SecureStore.getItemAsync('authToken');
+        
+        if (!token) {
+          Alert.alert('Error', 'Authentication required');
+          return;
+        }
+
+        // Get the bible version abbreviation from the selected ID
+        const version = filteredVersions.find(v => v.id === selectedVersion);
+        
+        if (!version) {
+          Alert.alert('Error', 'Selected version not found');
+          return;
+        }
+
+        // Update user's Bible version preference using the new API
+        const response = await fetch(API_ENDPOINTS.BIBLE_USER_VERSION, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bibleVersion: version.abbreviation,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+
+        console.log('✅ Bible version updated successfully:', version.abbreviation);
+        router.push('/(main)/age-group');
+      } catch (error) {
+        console.error('❌ Error updating Bible version:', error);
+        Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update Bible version');
+      } finally {
+        hideLoading();
+      }
     }
   };
 
@@ -62,11 +210,22 @@ export default function BibleVersionScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Choose Your Bible Version</Text>
+          <Text style={styles.headerTitle}>
+            {userDenomination ? `Recommended Bible Versions for ${userDenomination}` : 'Choose Your Bible Version'}
+          </Text>
           <Text style={styles.headerSubtitle}>
-            Select your preferred Bible translation for daily readings
+            {userDenomination 
+              ? `These translations are commonly used and recommended for ${userDenomination} churches`
+              : 'Select your preferred Bible translation for daily readings'
+            }
           </Text>
         </View>
         {/* Progress Indicator */}
@@ -79,45 +238,56 @@ export default function BibleVersionScreen() {
         {/* Scrollable Cards */}
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           <View style={styles.versionsContainer}>
-            {bibleVersions.map((version) => (
-              <TouchableOpacity
-                key={version.id}
-                style={[
-                  styles.versionCard,
-                  { width: '100%' },
-                  selectedVersion === version.id && styles.selectedCard
-                ]}
-                onPress={() => setSelectedVersion(version.id)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.cardContent}>
-                  <View style={styles.iconContainer}>
-                    <Ionicons 
-                      name="book" 
-                      size={24} 
-                      color={WHITE} 
-                    />
+            {filteredVersions.map((version) => {
+              const isRecommended = userDenomination && version.recommended.includes(userDenomination);
+              return (
+                <TouchableOpacity
+                  key={version.id}
+                  style={[
+                    styles.versionCard,
+                    { width: '100%' },
+                    selectedVersion === version.id && styles.selectedCard,
+                    isRecommended && styles.recommendedCard
+                  ]}
+                  onPress={() => setSelectedVersion(version.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.cardContent}>
+                    <View style={styles.iconContainer}>
+                      <Ionicons 
+                        name="book" 
+                        size={24} 
+                        color={WHITE} 
+                      />
+                    </View>
+                    <View style={styles.versionInfo}>
+                      <View style={styles.titleRow}>
+                        <Text style={[
+                          styles.versionName,
+                          selectedVersion === version.id && styles.selectedText
+                        ]}>
+                          {version.name}
+                        </Text>
+                        {isRecommended && (
+                          <View style={styles.recommendedBadge}>
+                            <Text style={styles.recommendedText}>Recommended</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[
+                        styles.versionDescription,
+                        selectedVersion === version.id && styles.selectedDescription
+                      ]}>
+                        {version.description}
+                      </Text>
+                    </View>
+                    {selectedVersion === version.id && (
+                      <Ionicons name="checkmark-circle" size={24} color={WHITE} />
+                    )}
                   </View>
-                  <View style={styles.versionInfo}>
-                    <Text style={[
-                      styles.versionName,
-                      selectedVersion === version.id && styles.selectedText
-                    ]}>
-                      {version.name}
-                    </Text>
-                    <Text style={[
-                      styles.versionDescription,
-                      selectedVersion === version.id && styles.selectedDescription
-                    ]}>
-                      {version.description}
-                    </Text>
-                  </View>
-                  {selectedVersion === version.id && (
-                    <Ionicons name="checkmark-circle" size={24} color={WHITE} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </ScrollView>
         {/* Fixed Footer Button */}
@@ -143,12 +313,6 @@ export default function BibleVersionScreen() {
             />
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={styles.skipButton}
-            onPress={() => router.push('/(main)/age-group')}
-          >
-            <Text style={styles.skipButtonText}>Skip for now</Text>
-          </TouchableOpacity>
         </View>
       </LinearGradient>
     </SafeAreaView>
@@ -241,12 +405,31 @@ const styles = StyleSheet.create({
   versionInfo: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   versionName: {
     fontSize: 16,
     color: WHITE,
     fontFamily: 'serif',
     fontWeight: '500',
-    marginBottom: 4,
+    flex: 1,
+  },
+  recommendedBadge: {
+    backgroundColor: SECONDARY_COLOR,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  recommendedText: {
+    fontSize: 10,
+    color: WHITE,
+    fontFamily: 'serif',
+    fontWeight: 'bold',
   },
   selectedText: {
     fontWeight: 'bold',
@@ -258,6 +441,10 @@ const styles = StyleSheet.create({
   },
   selectedDescription: {
     color: 'rgba(255, 255, 255, 0.9)',
+  },
+  recommendedCard: {
+    borderColor: SECONDARY_COLOR,
+    borderWidth: 1,
   },
   footer: {
     paddingVertical: 20,
@@ -285,13 +472,34 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: SOFT_GRAY,
   },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
+  backButton: {
+    top: 50,
+    left: 20,
   },
-  skipButtonText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    color: WHITE,
     fontSize: 16,
     fontFamily: 'serif',
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  retryButtonText: {
+    color: WHITE,
+    fontSize: 14,
+    fontFamily: 'serif',
+    fontWeight: '500',
   },
 }); 

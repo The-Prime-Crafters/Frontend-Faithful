@@ -58,7 +58,7 @@ export default function SplashScreen() {
         <Video
           ref={videoRef}
           source={require('../assets/videos/splash-video.mp4')}
-          style={[styles.video, { width: '100%', height: undefined, aspectRatio: width / height, maxHeight: height }]}
+          style={styles.video}
           resizeMode={ResizeMode.COVER}
           shouldPlay={true}
           isLooping={false}
@@ -100,8 +100,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   video: {
-    width: width,
-    height: height,
+    width: '100%',
+    height: '100%',
     position: 'absolute',
   },
   fallbackContainer: {

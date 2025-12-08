@@ -1,15 +1,16 @@
+import BackButton from '@/components/BackButton';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
-  Dimensions,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -103,6 +104,12 @@ export default function FaithStrengthensScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
           {/* Floating particles */}
           <View style={styles.particlesContainer}>
@@ -209,6 +216,7 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     paddingHorizontal: 20,
+    paddingTop: 60, // Add space for back button
   },
   headerSection: {
     alignItems: 'center',
@@ -419,5 +427,9 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     letterSpacing: 0.5,
     marginRight: 8,
+  },
+  backButton: {
+    top: 50,
+    left: 20,
   },
 });

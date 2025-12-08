@@ -63,9 +63,9 @@ export default function WelcomeScreen() {
 
           {/* Welcome Text */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>Welcome to Your Spiritual Journey</Text>
+            <Text style={styles.title}>Welcome to Faithful</Text>
             <Text style={styles.subtitle}>
-              You're all set! We'll personalize your experience based on your preferences to provide the most relevant spiritual guidance.
+              Your personalized faith journey begins now! We've tailored your experience to match your beliefs, creating a sacred space for growth, prayer, and community.
             </Text>
           </View>
 
@@ -73,19 +73,19 @@ export default function WelcomeScreen() {
           <View style={styles.featuresContainer}>
             <View style={styles.featureItem}>
               <Ionicons name="book" size={24} color={WHITE} />
-              <Text style={styles.featureText}>Daily Scripture Readings</Text>
+              <Text style={styles.featureText}>Personalized Devotions</Text>
             </View>
             <View style={styles.featureItem}>
               <Ionicons name="chatbubbles" size={24} color={WHITE} />
-              <Text style={styles.featureText}>AI Spiritual Guidance</Text>
+              <Text style={styles.featureText}>Prayer Community</Text>
             </View>
             <View style={styles.featureItem}>
-              <Ionicons name="hand-left" size={24} color={WHITE} />
-              <Text style={styles.featureText}>Study Groups</Text>
+              <Ionicons name="people" size={24} color={WHITE} />
+              <Text style={styles.featureText}>Faith Groups</Text>
             </View>
             <View style={styles.featureItem}>
-              <Ionicons name="person" size={24} color={WHITE} />
-              <Text style={styles.featureText}>Personalized Experience</Text>
+              <Ionicons name="heart" size={24} color={WHITE} />
+              <Text style={styles.featureText}>Spiritual Growth</Text>
             </View>
           </View>
         </View>

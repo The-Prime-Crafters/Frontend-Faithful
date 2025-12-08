@@ -1,15 +1,22 @@
+import BackButton from '@/components/BackButton';
+import { API_ENDPOINTS } from '@/constants/API';
+import { useLoading } from '@/contexts/LoadingContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
-    Dimensions,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -25,10 +32,44 @@ export default function BibleSpecificScreen() {
   const router = useRouter();
   const [input, setInput] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const { showLoading, hideLoading } = useLoading();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (input.trim()) {
-      router.push('/(main)/final-analysis');
+      try {
+        showLoading('Saving preferences...');
+        const token = await SecureStore.getItemAsync('authToken');
+        
+        if (!token) {
+          Alert.alert('Error', 'Authentication required');
+          return;
+        }
+
+        // Update user preferences with bible specific input
+        const response = await fetch(API_ENDPOINTS.USERS_PREFERENCES, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bibleSpecific: input.trim(),
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+
+        console.log('✅ Bible specific preferences saved successfully');
+        router.replace('/(tabs)');
+      } catch (error) {
+        console.error('❌ Error saving preferences:', error);
+        Alert.alert('Error', error instanceof Error ? error.message : 'Failed to save preferences');
+      } finally {
+        hideLoading();
+      }
     }
   };
 
@@ -60,76 +101,95 @@ export default function BibleSpecificScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         {/* Floating particles */}
         <View style={styles.particlesContainer}>
           {renderParticles()}
         </View>
 
-        {/* Progress Indicator */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <LinearGradient
-              colors={[WHITE, 'rgba(255,255,255,0.9)']}
-              style={[styles.progressFill, { width: '100%' }]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            />
-          </View>
-          <Text style={styles.progressText}>Step 6 of 6</Text>
-        </View>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <ScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Progress Indicator */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <LinearGradient
+                  colors={[WHITE, 'rgba(255,255,255,0.9)']}
+                  style={[styles.progressFill, { width: '100%' }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+              <Text style={styles.progressText}>Step 6 of 6</Text>
+            </View>
 
-        <View style={styles.centeredContent}>
-          {/* Header with icon */}
-          <View style={styles.headerSection}>
-            <View style={styles.iconContainer}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)']}
-                style={styles.iconGradient}
-              >
-                <Text style={styles.iconText}>📖</Text>
-              </LinearGradient>
+            {/* Header with icon */}
+            <View style={styles.headerSection}>
+              <View style={styles.iconContainer}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)']}
+                  style={styles.iconGradient}
+                >
+                  <Text style={styles.iconText}>📖</Text>
+                </LinearGradient>
+              </View>
+              
+              <Text style={styles.title}>The Bible is vast</Text>
+              <Text style={styles.subtitle}>
+                Let us know what specific part of your life you want guidance on.
+              </Text>
             </View>
-            
-            <Text style={styles.title}>The Bible is vast</Text>
-            <Text style={styles.subtitle}>
-              Let us know what specific part of your life you want guidance on.
-            </Text>
-          </View>
 
-          {/* Enhanced input section */}
-          <View style={styles.inputSection}>
-            <View style={styles.inputLabel}>
-              <Text style={styles.labelText}>Share your thoughts</Text>
-              <Text style={styles.characterCount}>{input.length}/500</Text>
+            {/* Enhanced input section */}
+            <View style={styles.inputSection}>
+              <View style={styles.inputLabel}>
+                <Text style={styles.labelText}>Share your thoughts</Text>
+                <Text style={styles.characterCount}>{input.length}/500</Text>
+              </View>
+              
+              <View style={[
+                styles.inputContainer,
+                isFocused && styles.inputContainerFocused
+              ]}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="I'm looking for guidance on..."
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={input}
+                  onChangeText={setInput}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  multiline
+                  numberOfLines={5}
+                  textAlignVertical="top"
+                  maxLength={500}
+                />
+                {!input && (
+                  <View style={styles.placeholderHint}>
+                    <Text style={styles.hintText}>
+                      Examples: "Marriage", "Career decisions", "Parenting", "Finding purpose"
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-            
-            <View style={[
-              styles.inputContainer,
-              isFocused && styles.inputContainerFocused
-            ]}>
-              <TextInput
-                style={styles.input}
-                placeholder="I'm looking for guidance on..."
-                placeholderTextColor="rgba(255,255,255,0.6)"
-                value={input}
-                onChangeText={setInput}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                multiline
-                numberOfLines={5}
-                textAlignVertical="top"
-                maxLength={500}
-              />
-              {!input && (
-                <View style={styles.placeholderHint}>
-                  <Text style={styles.hintText}>
-                    Examples: "Marriage", "Career decisions", "Parenting", "Finding purpose"
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
+
+            {/* Spacer for better scrolling */}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Simple Continue Button */}
         <View style={styles.footer}>
@@ -191,6 +251,7 @@ const styles = StyleSheet.create({
   progressContainer: {
     marginBottom: 30,
     marginTop: 10,
+    paddingTop: 60, // Add space for back button
   },
   progressBar: {
     height: 8,
@@ -214,14 +275,17 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     textAlign: 'center',
   },
-  centeredContent: {
+  keyboardAvoidingView: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   headerSection: {
     alignItems: 'center',
     marginBottom: 40,
+    marginTop: 20,
   },
   iconContainer: {
     marginBottom: 20,
@@ -261,7 +325,7 @@ const styles = StyleSheet.create({
   },
   inputSection: {
     width: '100%',
-    marginBottom: 20,
+    paddingHorizontal: 0,
   },
   inputLabel: {
     flexDirection: 'row',
@@ -350,5 +414,9 @@ const styles = StyleSheet.create({
   },
   disabledButtonText: {
     color: 'rgba(139, 90, 115, 0.6)',
+  },
+  backButton: {
+    top: 50,
+    left: 20,
   },
 });

@@ -1,10 +1,11 @@
+import { API_ENDPOINTS } from '@/constants/API';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
     Linking,
+    Modal,
     Platform,
     SafeAreaView,
     ScrollView,
@@ -37,17 +38,21 @@ interface StudyGroup {
   description?: string;
   maxParticipants: number;
   startTime: string;
+  startTimeLocal?: string;
   durationMinutes: number;
   attendeeEmails?: string[];
   frequency?: string;
   interval?: number;
   daysOfWeek?: number[];
   endDate?: string;
+  endDateLocal?: string;
+  // Google Meet fields
   meetLink?: string;
   meetId?: string;
   theme?: string;
   isRecurring: boolean;
   createdAt: string;
+  createdAtLocal?: string;
   userRole?: string;
   joinedAt?: string;
   creatorName?: string;
@@ -60,6 +65,8 @@ interface StudyGroup {
   joinRequestStatus?: string | null;
   joinRequestMessage?: string | null;
   joinRequestedAt?: string | null;
+  timezone?: string;
+  requiresApproval?: boolean;
 }
 
 interface JoinGroupsScreenProps {
@@ -98,10 +105,117 @@ const formatDayOfWeek = (date: Date): string => {
   });
 };
 
+// Custom Alert Component
+interface AlertConfig {
+  visible: boolean;
+  title: string;
+  message: string;
+  type: 'success' | 'error' | 'info' | 'confirm';
+  onConfirm?: () => void;
+  onCancel?: () => void;
+  confirmText?: string;
+  cancelText?: string;
+}
+
+const CustomAlert = ({ config, onClose }: { config: AlertConfig; onClose: () => void }) => {
+  if (!config.visible) return null;
+
+  return (
+    <View style={styles.alertOverlay}>
+      <View style={styles.alertContainer}>
+        <View style={styles.alertHeader}>
+          <Text style={styles.alertTitle}>{config.title}</Text>
+        </View>
+        <Text style={styles.alertMessage}>{config.message}</Text>
+        <View style={styles.alertButtons}>
+          {config.type === 'confirm' && (
+            <TouchableOpacity
+              style={[styles.alertButton, styles.alertCancelButton]}
+              onPress={() => {
+                config.onCancel?.();
+                onClose();
+              }}
+            >
+              <Text style={styles.alertCancelButtonText}>
+                {config.cancelText || 'Cancel'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[
+              styles.alertButton,
+              config.type === 'confirm' ? styles.alertConfirmButton : styles.alertPrimaryButton
+            ]}
+            onPress={() => {
+              config.onConfirm?.();
+              onClose();
+            }}
+          >
+            <Text style={[
+              styles.alertButtonText,
+              config.type === 'confirm' ? styles.alertConfirmButtonText : styles.alertPrimaryButtonText
+            ]}>
+              {config.confirmText || (config.type === 'confirm' ? 'Confirm' : 'OK')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
+
 export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScreenProps) {
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Custom alert state
+  const [alertConfig, setAlertConfig] = useState<AlertConfig>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+  
+  // Join message modal state
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [joinMessage, setJoinMessage] = useState('I would like to join this study group!');
+  
+  // Fallback state for showing all groups
+  const [showingAllGroups, setShowingAllGroups] = useState(false);
+
+  // Alert helper functions
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type
+    });
+  };
+
+  const hideAlert = () => {
+    setAlertConfig(prev => ({ ...prev, visible: false }));
+  };
+
+  const showSuccessAlert = (message: string) => {
+    showAlert('Success', message, 'success');
+  };
+
+  const showErrorAlert = (message: string) => {
+    showAlert('Error', message, 'error');
+  };
+
+  const showConfirmAlert = (title: string, message: string, onConfirm: () => void) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type: 'confirm',
+      onConfirm
+    });
+  };
 
   useEffect(() => {
     loadStudyGroupsForDate();
@@ -119,11 +233,47 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
         return;
       }
 
-      // Format date for API (YYYY-MM-DD)
-      const dateString = selectedDate.toISOString().split('T')[0];
-      console.log('🔄 Fetching study groups for date:', dateString);
+      // Format date for API (YYYY-MM-DD) - using local date to avoid timezone issues
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
       
-      const response = await fetch(`https://33df0b2b10af.ngrok-free.app/api/study-groups/public?date=${dateString}`, {
+      console.log('🔄 Fetching study groups for date:', dateString);
+      console.log('📅 Selected date object:', selectedDate);
+      console.log('📅 Manual date construction:', `${year}-${month}-${day}`);
+      
+      // First, let's try to get all public groups without date filter to see what's available
+      console.log('🔍 Fetching ALL public groups first...');
+      const allGroupsResponse = await fetch(API_ENDPOINTS.STUDY_GROUPS_PUBLIC, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let allGroupsData = null;
+      if (allGroupsResponse.ok) {
+        allGroupsData = await allGroupsResponse.json();
+        console.log('📊 ALL public groups (no date filter):');
+        if (allGroupsData.success && allGroupsData.data && allGroupsData.data.groups) {
+          console.log(`Found ${allGroupsData.data.groups.length} total groups`);
+          allGroupsData.data.groups.forEach((group: any, index: number) => {
+            console.log(`Group ${index + 1}:`, {
+              id: group.id,
+              title: group.title,
+              scheduled_time: group.scheduled_time,
+              next_occurrence: group.next_occurrence,
+              is_recurring: group.is_recurring,
+              recurrence_pattern: group.recurrence_pattern
+            });
+          });
+        }
+      }
+      
+      // Now fetch with date filter
+      const response = await fetch(`${API_ENDPOINTS.STUDY_GROUPS_PUBLIC}?date=${dateString}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -136,11 +286,11 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
         console.log('✅ Study groups fetched successfully:');
         console.log('📊 Raw API Response:', JSON.stringify(data, null, 2));
         
+        let groupsForDate: any[] = [];
+        
         if (data.success && data.data && data.data.groups) {
           console.log('🔍 Raw groups from API (before normalization):');
-          data.data.groups.forEach((group: any, index: number) => {
-            console.log(`Raw Group ${index + 1}:`, JSON.stringify(group, null, 2));
-          });
+          console.log(`Found ${data.data.groups.length} groups for date ${dateString}`);
           
           // Map API response to our StudyGroup interface
           const normalizedGroups = data.data.groups.map((group: any) => ({
@@ -149,54 +299,86 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
             description: group.description || 'No description',
             maxParticipants: group.max_participants || 10,
             startTime: group.scheduled_time || group.next_occurrence,
+            startTimeLocal: group.scheduled_time_local || group.next_occurrence_local,
             durationMinutes: group.duration_minutes || 60,
             attendeeEmails: group.attendeeEmails || [],
             frequency: group.recurrence_pattern || 'weekly',
             interval: group.recurrence_interval || 1,
             daysOfWeek: group.recurrence_days_of_week || [],
             endDate: group.recurrence_end_date,
+            endDateLocal: group.recurrence_end_date_local,
             meetLink: group.meet_link,
             meetId: group.meet_id,
-            theme: group.theme,
+            theme: group.theme || 'General',
             isRecurring: group.is_recurring || false,
             createdAt: group.created_at || new Date().toISOString(),
+            createdAtLocal: group.created_at_local,
             userRole: group.userStatus?.role || group.user_role || null,
             joinedAt: group.userStatus?.joinedAt || group.user_joined_at || null,
             creatorName: group.creator_name,
             creatorEmail: group.creator_email,
             currentMembers: group.current_members?.toString() || '0',
-            isActive: group.is_active !== false, // Default to true unless explicitly false
-            // New fields from userStatus
+            isActive: group.is_active !== false,
             isMember: group.userStatus?.isMember || false,
             hasJoinRequest: group.userStatus?.hasJoinRequest || false,
             joinRequestStatus: group.userStatus?.joinRequestStatus || group.user_join_request_status || null,
             joinRequestMessage: group.userStatus?.joinRequestMessage || null,
-            joinRequestedAt: group.userStatus?.joinRequestedAt || group.user_join_requested_at || null
+            joinRequestedAt: group.userStatus?.joinRequestedAt || group.user_join_requested_at || null,
+            timezone: group.timezone,
+            requiresApproval: group.requires_approval
           }));
 
-          // No need to filter by date since API already returns groups for the specific date
-          const groupsForDate = normalizedGroups;
-
+          groupsForDate = normalizedGroups;
           setStudyGroups(groupsForDate);
+          setShowingAllGroups(false);
           console.log('📚 Loaded study groups for date:', groupsForDate.length);
-          console.log('🔍 Detailed group data for debugging:');
-          groupsForDate.forEach((group, index) => {
-            console.log(`Group ${index + 1}:`, {
-              id: group.id,
-              title: group.title,
-              isMember: group.isMember,
-              joinedAt: group.joinedAt,
-              userRole: group.userRole,
-              hasJoinRequest: group.hasJoinRequest,
-              joinRequestStatus: group.joinRequestStatus,
-              creatorName: group.creatorName,
-              attendeeEmails: group.attendeeEmails,
-              currentMembers: group.currentMembers
-            });
-          });
         } else {
           console.log('⚠️ No study groups data in response');
           setStudyGroups([]);
+        }
+        
+        // If no groups found for specific date, show all available groups as fallback
+        if (groupsForDate.length === 0 && allGroupsData && allGroupsData.success && allGroupsData.data && allGroupsData.data.groups) {
+          console.log('⚠️ No groups found for specific date, showing all available groups...');
+          setShowingAllGroups(true);
+          
+          const allNormalizedGroups = allGroupsData.data.groups.map((group: any) => ({
+            id: group.id.toString(),
+            title: group.title || 'Untitled Study Group',
+            description: group.description || 'No description',
+            maxParticipants: group.max_participants || 10,
+            startTime: group.scheduled_time || group.next_occurrence,
+            startTimeLocal: group.scheduled_time_local || group.next_occurrence_local,
+            durationMinutes: group.duration_minutes || 60,
+            attendeeEmails: group.attendeeEmails || [],
+            frequency: group.recurrence_pattern || 'weekly',
+            interval: group.recurrence_interval || 1,
+            daysOfWeek: group.recurrence_days_of_week || [],
+            endDate: group.recurrence_end_date,
+            endDateLocal: group.recurrence_end_date_local,
+            meetLink: group.meet_link,
+            meetId: group.meet_id,
+            theme: group.theme || 'General',
+            isRecurring: group.is_recurring || false,
+            createdAt: group.created_at || new Date().toISOString(),
+            createdAtLocal: group.created_at_local,
+            userRole: group.userStatus?.role || group.user_role || null,
+            joinedAt: group.userStatus?.joinedAt || group.user_joined_at || null,
+            creatorName: group.creator_name,
+            creatorEmail: group.creator_email,
+            currentMembers: group.current_members?.toString() || '0',
+            isActive: group.is_active !== false,
+            isMember: group.userStatus?.isMember || false,
+            hasJoinRequest: group.userStatus?.hasJoinRequest || false,
+            joinRequestStatus: group.userStatus?.joinRequestStatus || group.user_join_request_status || null,
+            joinRequestMessage: group.userStatus?.joinRequestMessage || null,
+            joinRequestedAt: group.userStatus?.joinRequestedAt || group.user_join_requested_at || null,
+            timezone: group.timezone,
+            requiresApproval: group.requires_approval
+          }));
+          
+          setStudyGroups(allNormalizedGroups);
+          console.log('📚 Fallback: Loaded all available groups:', allNormalizedGroups.length);
         }
       } else {
         console.error('❌ Failed to fetch study groups:', response.status);
@@ -210,54 +392,94 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
     }
   };
 
-  const handleJoinGroup = async (groupId: string) => {
+  const handleJoinGroup = (groupId: string) => {
+    setSelectedGroupId(groupId);
+    setJoinMessage('I would like to join this study group!');
+    setShowJoinModal(true);
+  };
+
+  const handleSubmitJoinRequest = async () => {
+    if (!selectedGroupId) return;
+    
     try {
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
-        Alert.alert('Error', 'Please sign in to join study groups');
+        showErrorAlert('Please sign in to join study groups');
         return;
       }
 
-      console.log('🔄 Requesting to join study group:', groupId);
-      const response = await fetch(`https://33df0b2b10af.ngrok-free.app/api/study-groups/${groupId}/request-join`, {
+      console.log('🔄 REQUESTING TO JOIN STUDY GROUP');
+      console.log('📋 Group ID:', selectedGroupId);
+      console.log('📋 Join Message:', joinMessage.trim() || 'I would like to join this study group!');
+      console.log('📡 API Endpoint:', API_ENDPOINTS.getStudyGroupRequestJoin(selectedGroupId));
+
+      const requestBody = {
+        message: joinMessage.trim() || 'I would like to join this study group!'
+      };
+
+      console.log('📤 Request Body:', JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(API_ENDPOINTS.getStudyGroupRequestJoin(selectedGroupId), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: 'I would like to join this study group!'
-        }),
+        body: JSON.stringify(requestBody),
       });
+
+      console.log('📥 Response Status:', response.status);
+      console.log('📥 Response Headers:', response.headers);
 
       if (response.ok) {
         const result = await response.json();
-        console.log('✅ Join request submitted successfully:', result);
-        Alert.alert('Success', 'Your join request has been submitted! The group admin will review it.');
+        console.log('✅ JOIN REQUEST SUBMITTED SUCCESSFULLY');
+        console.log('📊 Full Response:', JSON.stringify(result, null, 2));
+        
+        showSuccessAlert('Your join request has been submitted! The group admin will review it.');
+        
         // Refresh the groups list
         await loadStudyGroupsForDate();
+        // Close modal
+        setShowJoinModal(false);
+        setSelectedGroupId(null);
       } else {
         const error = await response.json();
-        console.error('❌ Failed to submit join request:', error);
-        Alert.alert('Error', error.message || 'Failed to submit join request');
+        console.log('❌ FAILED TO SUBMIT JOIN REQUEST');
+        console.log('📥 Error Response:', JSON.stringify(error, null, 2));
+        showErrorAlert(error.message || 'Failed to submit join request');
       }
     } catch (error) {
+      console.log('💥 EXCEPTION CAUGHT');
       console.error('❌ Error submitting join request:', error);
-      Alert.alert('Error', 'Failed to submit join request. Please try again.');
+      showErrorAlert('Failed to submit join request. Please try again.');
     }
   };
 
-  const handleJoinConference = async (conferenceUrl: string) => {
+  const handleJoinConference = async (group: StudyGroup) => {
     try {
-      const supported = await Linking.canOpenURL(conferenceUrl);
-      if (supported) {
-        await Linking.openURL(conferenceUrl);
+      console.log('🎥 Joining conference for group:', group.id);
+
+      if (group.meetLink) {
+        // Join Google Meet
+        console.log('🎥 Opening Google Meet:', group.meetLink);
+        const supported = await Linking.canOpenURL(group.meetLink);
+        if (supported) {
+          await Linking.openURL(group.meetLink);
+        } else {
+          showErrorAlert('Cannot open the conference link');
+        }
       } else {
-        Alert.alert('Error', 'Cannot open the conference link');
+        // Fallback: create a new Google Meet
+        const meetingUrl = `https://meet.google.com/new?title=${encodeURIComponent(
+          group.title || 'Study Group'
+        )}`;
+        console.log('🎥 Creating new Google Meet:', meetingUrl);
+        await Linking.openURL(meetingUrl);
       }
     } catch (error) {
-      console.error('Error opening conference link:', error);
-      Alert.alert('Error', 'Failed to open conference link');
+      console.error('❌ Error joining conference:', error);
+      showErrorAlert('Failed to join video conference');
     }
   };
 
@@ -303,9 +525,14 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
           end={{ x: 1, y: 1 }}
           style={styles.dateCard}
         >
-          <Text style={styles.dateTitle}>{formatDate(selectedDate)}</Text>
+          <Text style={styles.dateTitle}>
+            {showingAllGroups ? 'All Available Groups' : formatDate(selectedDate)}
+          </Text>
           <Text style={styles.dateSubtitle}>
-            {filteredGroups.length} study groups available
+            {showingAllGroups 
+              ? `${filteredGroups.length} study groups available (no groups found for ${formatDateShort(selectedDate)})`
+              : `${filteredGroups.length} study groups available`
+            }
           </Text>
         </LinearGradient>
 
@@ -344,7 +571,7 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
                       <View style={styles.dateTimeRow}>
                         <Ionicons name="time" size={16} color={PRIMARY_COLOR} />
                         <Text style={styles.groupTime}>
-                          {formatTime(new Date(group.startTime))} ({group.durationMinutes} min)
+                          {group.startTimeLocal || formatTime(new Date(group.startTime))} ({group.durationMinutes} min)
                         </Text>
                       </View>
                     </View>
@@ -353,15 +580,15 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
                     
                     <View style={styles.groupMeta}>
                       <View style={styles.metaRow}>
-                        <Ionicons name="people" size={14} color={SOFT_GRAY} />
-                        <Text style={styles.metaText}>
+                        <Ionicons name="people" size={14} color={BLACK} />
+                        <Text style={[styles.metaText, { color: BLACK }]}>
                           {group.currentMembers || '0'}/{group.maxParticipants} members
                         </Text>
                       </View>
                       {group.isRecurring && (
                         <View style={styles.metaRow}>
-                          <Ionicons name="repeat" size={14} color={SOFT_GRAY} />
-                          <Text style={styles.metaText}>Recurring</Text>
+                          <Ionicons name="repeat" size={14} color={BLACK} />
+                          <Text style={[styles.metaText, { color: BLACK }]}>Recurring</Text>
                         </View>
                       )}
                     </View>
@@ -394,14 +621,16 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
                     {(group.meetLink || !group.isRecurring) && group.isMember && (
                       <TouchableOpacity 
                         style={styles.meetingButton}
-                        onPress={() => {
-                          const meetingUrl = group.meetLink || 
-                            `https://meet.google.com/new?title=${encodeURIComponent(group.title || 'Study Group')}`;
-                          handleJoinConference(meetingUrl);
-                        }}
+                        onPress={() => handleJoinConference(group)}
                       >
-                        <Ionicons name="videocam" size={16} color={WHITE} />
-                        <Text style={styles.meetingButtonText}>Join Meeting</Text>
+                        <Ionicons 
+                          name="logo-google" 
+                          size={16} 
+                          color={WHITE} 
+                        />
+                        <Text style={styles.meetingButtonText}>
+                          Join Meeting
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -417,13 +646,69 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
               <Text style={styles.emptyStateText}>
                 {searchQuery 
                   ? 'Try adjusting your search terms'
-                  : `No study groups scheduled for ${formatDateShort(selectedDate)}`
+                  : showingAllGroups 
+                    ? 'No study groups found for any date'
+                    : `No study groups scheduled for ${formatDateShort(selectedDate)}`
                 }
               </Text>
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* Join Message Modal */}
+      <Modal
+        visible={showJoinModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowJoinModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.joinModalContainer}>
+            <View style={styles.joinModalHeader}>
+              <Text style={styles.joinModalTitle}>Join Study Group</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowJoinModal(false)}
+              >
+                <Ionicons name="close" size={24} color={DARK_GRAY} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.joinModalContent}>
+              <Text style={styles.joinModalLabel}>Write a message to the group admin:</Text>
+              <TextInput
+                style={styles.joinMessageInput}
+                value={joinMessage}
+                onChangeText={setJoinMessage}
+                placeholder="I would like to join this study group!"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+              
+              <View style={styles.joinModalButtons}>
+                <TouchableOpacity
+                  style={[styles.joinModalButton, styles.cancelButton]}
+                  onPress={() => setShowJoinModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.joinModalButton, styles.submitButton]}
+                  onPress={handleSubmitJoinRequest}
+                >
+                  <Text style={styles.submitButtonText}>Send Request</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Custom Alert */}
+      <CustomAlert config={alertConfig} onClose={hideAlert} />
     </SafeAreaView>
   );
 }
@@ -661,5 +946,88 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // Join Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  joinModalContainer: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  joinModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: SOFT_GRAY,
+  },
+  joinModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: DARK_GRAY,
+    fontFamily: 'serif',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  joinModalContent: {
+    padding: 20,
+  },
+  joinModalLabel: {
+    fontSize: 16,
+    color: DARK_GRAY,
+    fontFamily: 'serif',
+    marginBottom: 12,
+  },
+  joinMessageInput: {
+    borderWidth: 1,
+    borderColor: SOFT_GRAY,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    fontFamily: 'serif',
+    color: DARK_GRAY,
+    backgroundColor: OFF_WHITE,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  joinModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  joinModalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: SOFT_GRAY,
+  },
+  submitButton: {
+    backgroundColor: PRIMARY_COLOR,
+  },
+  cancelButtonText: {
+    color: DARK_GRAY,
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'serif',
+  },
+  submitButtonText: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'serif',
   },
 });

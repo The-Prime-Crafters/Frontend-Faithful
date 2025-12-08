@@ -1,7 +1,12 @@
+import BackButton from '@/components/BackButton';
+import { API_ENDPOINTS } from '@/constants/API';
+import { useLoading } from '@/contexts/LoadingContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Platform,
   SafeAreaView,
@@ -28,10 +33,47 @@ const options = [
 export default function BibleAnswersScreen() {
   const router = useRouter();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const { showLoading, hideLoading } = useLoading();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedOption) {
-      router.push('/(main)/bible-specific');
+      try {
+        showLoading('Updating preferences...');
+        const token = await SecureStore.getItemAsync('authToken');
+        
+        if (!token) {
+          Alert.alert('Error', 'Authentication required');
+          return;
+        }
+
+        // Get the bible answers option from the selected ID
+        const option = options.find(o => o.id === selectedOption);
+        
+        // Update user preferences with bible answers
+        const response = await fetch(API_ENDPOINTS.USERS_PREFERENCES, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bibleAnswers: option?.label || 'Not specified',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+
+        console.log('✅ Bible answers updated successfully');
+        router.push('/(main)/bible-specific');
+      } catch (error) {
+        console.error('❌ Error updating preferences:', error);
+        Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update preferences');
+      } finally {
+        hideLoading();
+      }
     }
   };
 
@@ -43,6 +85,12 @@ export default function BibleAnswersScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         {/* Progress Indicator */}
         <View style={styles.progressContainer}>
@@ -113,6 +161,7 @@ const styles = StyleSheet.create({
   progressContainer: {
     marginBottom: 30,
     marginTop: 10,
+    paddingTop: 60, // Add space for back button
   },
   progressBar: {
     height: 6,
@@ -202,5 +251,9 @@ const styles = StyleSheet.create({
   },
   disabledButtonText: {
     color: '#ccc',
+  },
+  backButton: {
+    top: 50,
+    left: 20,
   },
 }); 

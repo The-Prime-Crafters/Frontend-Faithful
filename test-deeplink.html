@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Faithful Companion Deep Link</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #7b4d62 0%, #ce703f 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #7b4d62;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        button, a.button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            background: #7b4d62;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: background 0.3s;
+        }
+        button:hover, a.button:hover {
+            background: #5d3a4a;
+        }
+        .error-btn {
+            background: #d32f2f;
+        }
+        .error-btn:hover {
+            background: #b71c1c;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        .section h2 {
+            color: #7b4d62;
+            font-size: 18px;
+            margin-top: 0;
+        }
+        .code {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .link {
+            word-break: break-all;
+            font-size: 12px;
+            color: #666;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Deep Link Tester</h1>
+        <p class="subtitle">Test your Faithful Companion app deep linking</p>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> Make sure your app is installed and running on your device/emulator!
+        </div>
+
+        <div class="section">
+            <h2>✅ Test Success Flow</h2>
+            <p>This simulates a successful Google OAuth callback:</p>
+            <button onclick="testSuccess()">Test Success Authentication</button>
+            <div class="link" id="successLink"></div>
+        </div>
+
+        <div class="section">
+            <h2>❌ Test Error Flow</h2>
+            <p>This simulates a failed authentication:</p>
+            <button class="error-btn" onclick="testError()">Test Error Handling</button>
+            <div class="link" id="errorLink"></div>
+        </div>
+
+        <div class="section">
+            <h2>📝 Direct Links</h2>
+            <p>Click these links directly:</p>
+            <a href="faithfulcompanion://auth/callback?token=test_token_123&name=Test%20User&email=test@example.com&picture=https://via.placeholder.com/150&userId=1" class="button">
+                Open Success Link
+            </a>
+            <a href="faithfulcompanion://auth/callback?error=access_denied&message=User%20cancelled%20authentication" class="button error-btn">
+                Open Error Link
+            </a>
+        </div>
+
+        <div class="section">
+            <h2>🔍 What Should Happen?</h2>
+            <ol style="line-height: 1.8;">
+                <li>Your Faithful Companion app should open</li>
+                <li>You'll see "Completing sign in..." screen</li>
+                <li>The app will save the token and user data</li>
+                <li>You'll be redirected to the testimonialscreen2</li>
+            </ol>
+        </div>
+
+        <div class="success">
+            <strong>✅ If it works:</strong> You're all set! Your deep linking is configured correctly.
+        </div>
+
+        <div class="warning">
+            <strong>❌ If nothing happens:</strong>
+            <ol style="line-height: 1.8; padding-left: 20px;">
+                <li>Make sure you rebuilt the native app after modifying app.json</li>
+                <li>Run: <code style="background: white; padding: 2px 6px; border-radius: 3px;">npx expo prebuild --clean</code></li>
+                <li>Then: <code style="background: white; padding: 2px 6px; border-radius: 3px;">npx expo run:android</code> or <code style="background: white; padding: 2px 6px; border-radius: 3px;">npx expo run:ios</code></li>
+                <li>See DEEP_LINK_TESTING_GUIDE.md for detailed troubleshooting</li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>💻 Command Line Testing</h2>
+            <p><strong>Android:</strong></p>
+            <div class="code">adb shell am start -W -a android.intent.action.VIEW -d "faithfulcompanion://auth/callback?token=test123&name=Test&email=test@example.com&userId=1"</div>
+            
+            <p><strong>iOS Simulator:</strong></p>
+            <div class="code">xcrun simctl openurl booted "faithfulcompanion://auth/callback?token=test123&name=Test&email=test@example.com&userId=1"</div>
+        </div>
+    </div>
+
+    <script>
+        function testSuccess() {
+            const link = 'faithfulcompanion://auth/callback?token=test_token_123456789&name=Test%20User&email=test@example.com&picture=https://via.placeholder.com/150&userId=1';
+            document.getElementById('successLink').textContent = 'Opening: ' + link;
+            window.location = link;
+        }
+
+        function testError() {
+            const link = 'faithfulcompanion://auth/callback?error=access_denied&error_description=User%20cancelled%20the%20authentication%20process&message=Authentication%20was%20cancelled';
+            document.getElementById('errorLink').textContent = 'Opening: ' + link;
+            window.location = link;
+        }
+
+        // Display the links on page load
+        window.onload = function() {
+            document.getElementById('successLink').textContent = 'Link: faithfulcompanion://auth/callback?token=test_token_123456789&name=Test User&email=test@example.com&userId=1';
+            document.getElementById('errorLink').textContent = 'Link: faithfulcompanion://auth/callback?error=access_denied&message=Authentication was cancelled';
+        };
+    </script>
+</body>
+</html>
+

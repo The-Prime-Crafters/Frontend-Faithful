@@ -1,16 +1,21 @@
+import BackButton from '@/components/BackButton';
+import { API_ENDPOINTS } from '@/constants/API';
+import { useLoading } from '@/contexts/LoadingContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
-  Dimensions,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -34,11 +39,47 @@ const referralSources = [
 export default function ReferralSourceScreen() {
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const router = useRouter();
+  const { showLoading, hideLoading } = useLoading();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedSource) {
-      // Save selectedSource if needed
-      router.push('/(main)/faith-strengthens');
+      try {
+        showLoading('Updating preferences...');
+        const token = await SecureStore.getItemAsync('authToken');
+        
+        if (!token) {
+          Alert.alert('Error', 'Authentication required');
+          return;
+        }
+
+        // Get the referral source label from the selected ID
+        const source = referralSources.find(s => s.id === selectedSource);
+        
+        // Update user preferences with referral source
+        const response = await fetch(API_ENDPOINTS.USERS_PREFERENCES, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            referralSource: source?.label || 'Not specified',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+
+        console.log('✅ Referral source updated successfully');
+        router.push('/(main)/bible-answers');
+      } catch (error) {
+        console.error('❌ Error updating preferences:', error);
+        Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update preferences');
+      } finally {
+        hideLoading();
+      }
     }
   };
 
@@ -50,6 +91,12 @@ export default function ReferralSourceScreen() {
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       >
+        {/* Back Button */}
+        <BackButton 
+          onPress={() => router.back()}
+          style={styles.backButton}
+        />
+        
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>How did you hear about us?</Text>
@@ -119,12 +166,6 @@ export default function ReferralSourceScreen() {
               color={selectedSource ? WHITE : SOFT_GRAY}
             />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={() => router.push('/(main)/faith-strengthens')}
-          >
-            <Text style={styles.skipButtonText}>Skip for now</Text>
-          </TouchableOpacity>
         </View>
       </LinearGradient>
     </SafeAreaView>
@@ -144,7 +185,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 30,
-    paddingTop: 20,
+    paddingTop: 80, // Add space for back button
   },
   headerTitle: {
     fontSize: 28,
@@ -236,13 +277,8 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: SOFT_GRAY,
   },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  skipButtonText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 16,
-    fontFamily: 'serif',
+  backButton: {
+    top: 50,
+    left: 20,
   },
 }); 
