@@ -2,16 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    Linking,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Linking,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const PRIMARY_COLOR = '#7b4d62';
@@ -35,7 +35,7 @@ export default function HelpSupportScreen() {
   const handleEmailSupport = () => {
     const subject = encodeURIComponent('Support Request - Faithful Companion App');
     const body = encodeURIComponent('Please describe your issue or question:\n\n');
-    
+
     Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`)
       .catch(() => {
         Alert.alert(
@@ -103,118 +103,118 @@ export default function HelpSupportScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
-      
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header with Back Button */}
-        <View style={styles.headerContainer}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <View style={styles.backIconContainer}>
-              <Ionicons 
-                name="arrow-back" 
-                size={24} 
-                color={PRIMARY_COLOR} 
-              />
+
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header with Back Button */}
+          <View style={styles.headerContainer}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.backIconContainer}>
+                <Ionicons
+                  name="arrow-back"
+                  size={24}
+                  color={PRIMARY_COLOR}
+                />
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>Help & Support</Text>
+              <Text style={styles.headerSubtitle}>
+                Get help and find answers to your questions
+              </Text>
             </View>
-          </TouchableOpacity>
-          
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Help & Support</Text>
-            <Text style={styles.headerSubtitle}>
-              Get help and find answers to your questions
+          </View>
+          {/* Contact Support Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Contact Us</Text>
+
+            <TouchableOpacity
+              style={styles.contactCard}
+              onPress={handleEmailSupport}
+            >
+              <View style={styles.contactIconContainer}>
+                <Ionicons name="mail" size={24} color={PRIMARY_COLOR} />
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactTitle}>Email Support</Text>
+                <Text style={styles.contactSubtitle}>{SUPPORT_EMAIL}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contactCard}
+              onPress={handleVisitWebsite}
+            >
+              <View style={styles.contactIconContainer}>
+                <Ionicons name="globe" size={24} color={PRIMARY_COLOR} />
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactTitle}>Visit Our Website</Text>
+                <Text style={styles.contactSubtitle}>{SUPPORT_WEBSITE}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
+            </TouchableOpacity>
+          </View>
+
+          {/* FAQ Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+
+            {faqItems.map((faq) => (
+              <View key={faq.id} style={styles.faqItem}>
+                <TouchableOpacity
+                  style={styles.faqQuestion}
+                  onPress={() => toggleFAQ(faq.id)}
+                >
+                  <Text style={styles.faqQuestionText}>{faq.question}</Text>
+                  <Ionicons
+                    name={expandedFAQ === faq.id ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color={PRIMARY_COLOR}
+                  />
+                </TouchableOpacity>
+                {expandedFAQ === faq.id && (
+                  <View style={styles.faqAnswer}>
+                    <Text style={styles.faqAnswerText}>{faq.answer}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* App Info Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>App Information</Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Version</Text>
+                <Text style={styles.infoValue}>1.0.0</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Platform</Text>
+                <Text style={styles.infoValue}>{Platform.OS === 'ios' ? 'iOS' : 'Android'}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Help Message */}
+          <View style={styles.helpMessage}>
+            <Ionicons name="information-circle" size={24} color={PRIMARY_COLOR} />
+            <Text style={styles.helpMessageText}>
+              We're here to help! If you have any questions or need assistance,
+              please don't hesitate to reach out to our support team.
             </Text>
           </View>
-        </View>
-        {/* Contact Support Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Us</Text>
-          
-          <TouchableOpacity 
-            style={styles.contactCard}
-            onPress={handleEmailSupport}
-          >
-            <View style={styles.contactIconContainer}>
-              <Ionicons name="mail" size={24} color={PRIMARY_COLOR} />
-            </View>
-            <View style={styles.contactInfo}>
-              <Text style={styles.contactTitle}>Email Support</Text>
-              <Text style={styles.contactSubtitle}>{SUPPORT_EMAIL}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.contactCard}
-            onPress={handleVisitWebsite}
-          >
-            <View style={styles.contactIconContainer}>
-              <Ionicons name="globe" size={24} color={PRIMARY_COLOR} />
-            </View>
-            <View style={styles.contactInfo}>
-              <Text style={styles.contactTitle}>Visit Our Website</Text>
-              <Text style={styles.contactSubtitle}>{SUPPORT_WEBSITE}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
-          </TouchableOpacity>
-        </View>
-
-        {/* FAQ Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
-          
-          {faqItems.map((faq) => (
-            <View key={faq.id} style={styles.faqItem}>
-              <TouchableOpacity 
-                style={styles.faqQuestion}
-                onPress={() => toggleFAQ(faq.id)}
-              >
-                <Text style={styles.faqQuestionText}>{faq.question}</Text>
-                <Ionicons 
-                  name={expandedFAQ === faq.id ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={PRIMARY_COLOR} 
-                />
-              </TouchableOpacity>
-              {expandedFAQ === faq.id && (
-                <View style={styles.faqAnswer}>
-                  <Text style={styles.faqAnswerText}>{faq.answer}</Text>
-                </View>
-              )}
-            </View>
-          ))}
-        </View>
-
-        {/* App Info Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Information</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Version</Text>
-              <Text style={styles.infoValue}>1.0.0</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Platform</Text>
-              <Text style={styles.infoValue}>{Platform.OS === 'ios' ? 'iOS' : 'Android'}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Help Message */}
-        <View style={styles.helpMessage}>
-          <Ionicons name="information-circle" size={24} color={PRIMARY_COLOR} />
-          <Text style={styles.helpMessageText}>
-            We're here to help! If you have any questions or need assistance, 
-            please don't hesitate to reach out to our support team.
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
     </>
   );
 }

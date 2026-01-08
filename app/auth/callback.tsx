@@ -1,6 +1,5 @@
-import { checkProfileCompletion } from '@/utils/profileCompletion';
 import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
@@ -16,6 +15,7 @@ import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
  */
 export default function AuthCallbackScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -26,21 +26,40 @@ export default function AuthCallbackScreen() {
   const handleAuthCallback = async () => {
     try {
       console.log('🔐 Auth callback screen loaded');
+      console.log('📋 Route params:', params);
       
-      // Get the current URL
-      const url = await Linking.getInitialURL();
-      console.log('🔗 Current URL:', url);
+      // Try to get query params from multiple sources
+      let queryParams: any = null;
       
-      if (!url) {
-        console.error('❌ No URL found');
+      // 1. First try route params (most reliable for expo-router)
+      if (params && Object.keys(params).length > 0) {
+        console.log('✅ Using route params');
+        queryParams = params;
+      } else {
+        // 2. Fallback to Linking API
+        const url = await Linking.getInitialURL();
+        console.log('🔗 Linking URL:', url);
+        
+        if (url) {
+          const parsed = Linking.parse(url);
+          queryParams = parsed.queryParams;
+          console.log('✅ Using Linking params');
+        }
+      }
+      
+      console.log('📋 Final query params:', queryParams);
+      
+      if (!queryParams || Object.keys(queryParams).length === 0) {
+        console.error('❌ No query parameters found');
         setStatus('error');
-        setErrorMessage('No callback URL found');
+        setErrorMessage('No authentication data received');
+        Alert.alert(
+          'Error',
+          'No authentication data received. Please try signing in again.',
+          [{ text: 'OK', onPress: () => router.replace('/(main)/onboarding') }]
+        );
         return;
       }
-
-      // Parse the URL to extract query parameters
-      const { queryParams } = Linking.parse(url);
-      console.log('📋 Query params:', queryParams);
 
       // Check for error parameter first
       const error = queryParams?.error as string;
@@ -124,25 +143,16 @@ export default function AuthCallbackScreen() {
 
       // Show success status briefly
       setStatus('success');
+
+      // For Google OAuth users, skip onboarding and go directly to main app
+      // They already provided their basic info through Google
+      console.log('✅ Google OAuth sign-up complete - redirecting to main app');
+      console.log('💡 User can complete additional preferences from Account Settings if needed');
       
-      // Check if user has completed onboarding
-      console.log('🔍 Checking profile completion status...');
-      setTimeout(async () => {
-        try {
-          const profileStatus = await checkProfileCompletion();
-          if (profileStatus.isComplete) {
-            console.log('✅ Profile complete, redirecting to main app');
-            router.replace('/(tabs)');
-          } else {
-            console.log('⚠️ Profile incomplete, redirecting to onboarding');
-            router.replace('/(main)/testimonialscreen2');
-          }
-        } catch (error) {
-          console.error('Error checking profile completion:', error);
-          // Default to onboarding if check fails
-          router.replace('/(main)/testimonialscreen2');
-        }
-      }, 1000);
+      // Small delay to show success message
+      setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 500);
 
     } catch (error) {
       console.error('💥 Error handling auth callback:', error);

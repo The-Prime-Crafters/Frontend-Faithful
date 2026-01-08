@@ -3,24 +3,25 @@ import { API_BASE_URL, API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
 import { useAppUsage, useStreak } from '@/hooks/useAppUsage';
 import ActivityTrackerService from '@/utils/activityTracker';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+// import * as ImagePicker from 'expo-image-picker'; // COMMENTED OUT - IMAGE PICKER TEMPORARILY DISABLED
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-    Image,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Image,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const PRIMARY_COLOR = '#7b4d62';
@@ -361,8 +362,10 @@ export default function ProfileScreen() {
       // First, load from SecureStore (fast)
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const user = JSON.parse(userDataString);
-        setUserData(user);
+        const user = safeJsonParse(userDataString, null);
+        if (user) {
+          setUserData(user);
+        }
       }
       
       // Then, fetch fresh data from API to get latest profile picture
@@ -381,11 +384,12 @@ export default function ProfileScreen() {
             const freshUser = profileData.user || profileData;
             
             // Update user data with fresh profile picture
+            const existingUser = safeJsonParse(userDataString, {});
             const updatedUser = {
-              ...(userDataString ? JSON.parse(userDataString) : {}),
+              ...existingUser,
               picture: freshUser.picture, // Always use latest picture from backend
-              name: freshUser.name || (userDataString ? JSON.parse(userDataString).name : ''),
-              email: freshUser.email || (userDataString ? JSON.parse(userDataString).email : ''),
+              name: freshUser.name || existingUser.name || '',
+              email: freshUser.email || existingUser.email || '',
             };
             
             // Save to SecureStore and state
@@ -428,7 +432,7 @@ export default function ProfileScreen() {
       }
       
       // Calculate stats using new streak system (prioritize backend data, then hook data)
-      const usageData = usageDataString ? JSON.parse(usageDataString) : null;
+      const usageData = usageDataString ? safeJsonParse(usageDataString, null) : null;
       const currentStreak = Number(streakData?.currentStreak || backendStreak?.currentStreak || dailyActivity.currentStreak || calculateStreak(usageData) || 0);
       const longestStreak = Number(streakData?.longestStreak || backendStreak?.longestStreak || 0);
       
@@ -511,121 +515,123 @@ export default function ProfileScreen() {
     setShowAccountModal(false);
   };
 
-  const handleImagePicker = async () => {
-    try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (status !== 'granted') {
-        showErrorAlert('Sorry, we need camera roll permissions to change your profile picture.');
-        return;
-      }
+  // COMMENTED OUT - IMAGE PICKER TEMPORARILY DISABLED
+  // const handleImagePicker = async () => {
+  //   try {
+  //     // Request permission
+  //     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  //     
+  //     if (status !== 'granted') {
+  //       showErrorAlert('Sorry, we need camera roll permissions to change your profile picture.');
+  //       return;
+  //     }
 
-      // Open image picker with aggressive compression
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.3, // Reduced from 0.8 to 0.3 for smaller file size
-        base64: true,  // Get base64 directly
-      });
+  //     // Open image picker with aggressive compression
+  //     const result = await ImagePicker.launchImageLibraryAsync({
+  //       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  //       allowsEditing: true,
+  //       aspect: [1, 1],
+  //       quality: 0.3, // Reduced from 0.8 to 0.3 for smaller file size
+  //       base64: true,  // Get base64 directly
+  //     });
 
-      if (!result.canceled && result.assets[0]) {
-        await uploadProfilePicture(result.assets[0]);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      showErrorAlert('Failed to select image. Please try again.');
-    }
-  };
+  //     if (!result.canceled && result.assets[0]) {
+  //       await uploadProfilePicture(result.assets[0]);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error picking image:', error);
+  //     showErrorAlert('Failed to select image. Please try again.');
+  //   }
+  // };
 
-  const uploadProfilePicture = async (asset: any) => {
-    try {
-      setUploadingImage(true);
-      showLoading('Uploading profile picture...');
+  // COMMENTED OUT - IMAGE PICKER TEMPORARILY DISABLED
+  // const uploadProfilePicture = async (asset: any) => {
+  //   try {
+  //     setUploadingImage(true);
+  //     showLoading('Uploading profile picture...');
 
-      const token = await SecureStore.getItemAsync('authToken');
-      if (!token) {
-        showErrorAlert('Please sign in to update your profile picture.');
-        return;
-      }
+  //     const token = await SecureStore.getItemAsync('authToken');
+  //     if (!token) {
+  //       showErrorAlert('Please sign in to update your profile picture.');
+  //       return;
+  //     }
 
-      // Use base64 from ImagePicker (already compressed)
-      let base64 = asset.base64;
-      
-      if (!base64) {
-        // Fallback: convert from URI if base64 not available
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            // Extract just the base64 part without the data:image prefix
-            const base64Data = result.split(',')[1];
-            resolve(base64Data);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
+  //     // Use base64 from ImagePicker (already compressed)
+  //     let base64 = asset.base64;
+  //     
+  //     if (!base64) {
+  //       // Fallback: convert from URI if base64 not available
+  //       const response = await fetch(asset.uri);
+  //       const blob = await response.blob();
+  //       base64 = await new Promise<string>((resolve, reject) => {
+  //         const reader = new FileReader();
+  //         reader.onloadend = () => {
+  //           const result = reader.result as string;
+  //           // Extract just the base64 part without the data:image prefix
+  //           const base64Data = result.split(',')[1];
+  //           resolve(base64Data);
+  //         };
+  //         reader.onerror = reject;
+  //         reader.readAsDataURL(blob);
+  //       });
+  //     }
 
-      // Add data URI prefix if not present
-      const imageData = base64.startsWith('data:') 
-        ? base64 
-        : `data:image/jpeg;base64,${base64}`;
+  //     // Add data URI prefix if not present
+  //     const imageData = base64.startsWith('data:') 
+  //       ? base64 
+  //       : `data:image/jpeg;base64,${base64}`;
 
-      // Check file size (base64 length * 0.75 gives approximate byte size)
-      const fileSizeKB = (imageData.length * 0.75) / 1024;
-      console.log(`📏 Image size: ${fileSizeKB.toFixed(2)} KB`);
+  //     // Check file size (base64 length * 0.75 gives approximate byte size)
+  //     const fileSizeKB = (imageData.length * 0.75) / 1024;
+  //     console.log(`📏 Image size: ${fileSizeKB.toFixed(2)} KB`);
 
-      if (fileSizeKB > 100) {
-        showErrorAlert('Image is too large. Please select a smaller image or crop it more.');
-        return;
-      }
+  //     if (fileSizeKB > 100) {
+  //       showErrorAlert('Image is too large. Please select a smaller image or crop it more.');
+  //       return;
+  //     }
 
-      console.log('📸 Uploading profile picture...');
-      console.log('📡 Endpoint:', API_ENDPOINTS.USERS_PROFILE_PICTURE);
+  //     console.log('📸 Uploading profile picture...');
+  //     console.log('📡 Endpoint:', API_ENDPOINTS.USERS_PROFILE_PICTURE);
 
-      // Upload to backend
-      const uploadResponse = await fetch(API_ENDPOINTS.USERS_PROFILE_PICTURE, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          picture: imageData,
-        }),
-      });
+  //     // Upload to backend
+  //     const uploadResponse = await fetch(API_ENDPOINTS.USERS_PROFILE_PICTURE, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`,
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         picture: imageData,
+  //       }),
+  //     });
 
-      if (uploadResponse.ok) {
-        const result = await uploadResponse.json();
-        console.log('✅ Profile picture updated:', result);
+  //     if (uploadResponse.ok) {
+  //       const result = await uploadResponse.json();
+  //       console.log('✅ Profile picture updated:', result);
 
-        // Update local user data
-        const updatedUserData = {
-          ...userData,
-          picture: result.pictureUrl || imageData,
-        };
-        
-        await SecureStore.setItemAsync('userData', JSON.stringify(updatedUserData));
-        setUserData(updatedUserData);
+  //       // Update local user data
+  //       const updatedUserData = {
+  //         ...userData,
+  //         picture: result.pictureUrl || imageData,
+  //       };
+  //       
+  //       await SecureStore.setItemAsync('userData', JSON.stringify(updatedUserData));
+  //       setUserData(updatedUserData);
 
-        showSuccessAlert('Profile picture updated successfully!');
-      } else {
-        const error = await uploadResponse.json();
-        console.error('❌ Failed to upload:', error);
-        showErrorAlert(error.message || 'Failed to upload profile picture. The image might be too large.');
-      }
-    } catch (error) {
-      console.error('❌ Error uploading image:', error);
-      showErrorAlert('Failed to upload profile picture. Please try again with a smaller image.');
-    } finally {
-      setUploadingImage(false);
-      hideLoading();
-    }
-  };
+  //       showSuccessAlert('Profile picture updated successfully!');
+  //     } else {
+  //       const error = await uploadResponse.json();
+  //       console.error('❌ Failed to upload:', error);
+  //       showErrorAlert(error.message || 'Failed to upload profile picture. The image might be too large.');
+  //     }
+  //   } catch (error) {
+  //     console.error('❌ Error uploading image:', error);
+  //     showErrorAlert('Failed to upload profile picture. Please try again with a smaller image.');
+  //   } finally {
+  //     setUploadingImage(false);
+  //     hideLoading();
+  //   }
+  // };
 
   const handleLogout = async () => {
     showConfirmAlert(
@@ -676,11 +682,13 @@ export default function ProfileScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.profileCard}
         >
-          <TouchableOpacity 
+          {/* COMMENTED OUT - IMAGE PICKER TEMPORARILY DISABLED */}
+          {/* <TouchableOpacity 
             style={styles.profileImageContainer}
             onPress={handleImagePicker}
             disabled={uploadingImage}
-        >
+        > */}
+          <View style={styles.profileImageContainer}>
           <View style={styles.profileImage}>
               {uploadingImage ? (
                 <ActivityIndicator size="large" color={WHITE} />
@@ -694,10 +702,11 @@ export default function ProfileScreen() {
               <Ionicons name="person" size={40} color={PRIMARY_COLOR} />
             )}
           </View>
-            <View style={styles.editImageButton}>
+            {/* <View style={styles.editImageButton}>
               <Ionicons name="camera" size={16} color={WHITE} />
-            </View>
-          </TouchableOpacity>
+            </View> */}
+          </View>
+          {/* </TouchableOpacity> */}
           <Text style={styles.profileName}>
             {userData?.name || 'User'}
           </Text>

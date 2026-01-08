@@ -28,16 +28,33 @@ const OnboardingScreen = () => {
       
       // Step 1: Get OAuth URL from your API
       console.log('🔗 Fetching OAuth URL from backend...');
+      console.log('🌐 URL:', `${API_ENDPOINTS.GOOGLE_AUTH_URL}?platform=mobile`);
       const response = await fetch(`${API_ENDPOINTS.GOOGLE_AUTH_URL}?platform=mobile`);
-      const { url } = await response.json();
+      
+      // Check if response is OK
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Backend error:', response.status, response.statusText);
+        console.error('❌ Response body:', errorText.substring(0, 500));
+        throw new Error(`Backend returned ${response.status}: ${response.statusText}. Please check if the backend server is running.`);
+      }
+      
+      const data = await response.json();
+      const url = data.url;
+      
+      if (!url) {
+        console.error('❌ No URL in response:', data);
+        throw new Error('Backend did not return an OAuth URL');
+      }
+      
       console.log('🔗 Got OAuth URL from backend');
       
       // Step 2: Open OAuth in browser with callback URL
       console.log('📱 Opening WebBrowser for OAuth...');
       console.log('🔗 Backend will redirect to: faithfulcompanion://auth/callback');
       
-      // Use openAuthSessionAsync instead of openBrowserAsync for OAuth flows
-      // This properly handles the redirect back to the app
+      // Use openAuthSessionAsync for OAuth flow
+      // In Expo Go, the redirect may not work automatically
       const result = await WebBrowser.openAuthSessionAsync(
         url,
         'faithfulcompanion://auth/callback'
@@ -46,14 +63,22 @@ const OnboardingScreen = () => {
       console.log('✅ Auth session completed');
       console.log('🔍 Result type:', result.type);
       
-      // Note: The deep link handler in _layout.tsx will handle the callback
-      // and extract the token, name, email, etc. from the URL
+      // Handle different result types
       if (result.type === 'success') {
         console.log('✅ OAuth flow completed successfully');
         console.log('🔗 Callback URL:', result.url);
       } else if (result.type === 'cancel') {
         console.log('❌ User cancelled the OAuth flow');
         Alert.alert('Cancelled', 'Sign in was cancelled');
+      } else if (result.type === 'dismiss') {
+        // Browser was dismissed - auth may have succeeded
+        // The deep link handler will process it
+        console.log('⚠️ Browser dismissed - waiting for auth callback...');
+        Alert.alert(
+          'Almost there!',
+          'If you signed in successfully, the app should update automatically. If not, please try again.',
+          [{ text: 'OK' }]
+        );
       } else {
         console.log('⚠️ OAuth flow ended with type:', result.type);
       }

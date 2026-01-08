@@ -1,20 +1,26 @@
+import DailyCard from '@/components/home/DailyCard';
+import ReadModal from '@/components/modals/ReadModal';
+import TTSModal from '@/components/modals/TTSModal';
+import ViewMoreModal from '@/components/modals/ViewMoreModal';
 import { API_BASE_URL, API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
 import { useAppUsage, useStreak, useTodayUsage } from '@/hooks/useAppUsage';
+import { useDailyContent } from '@/hooks/useDailyContent';
 import ActivityTrackerService from '@/utils/activityTracker';
+import { fetchPrayerStories as fetchPrayerStoriesApi } from '@/utils/api/prayerStories';
 import AppSessionTracker from '@/utils/appSessionTracker';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   Dimensions,
   Image,
-  LayoutAnimation,
   Platform, SafeAreaView,
   ScrollView,
   StatusBar,
@@ -28,64 +34,169 @@ import { useTTS } from '../../hooks/useTTS';
 
 /* ───── Constants ───── */
 const { width, height } = Dimensions.get('window');
-const PRIMARY_COLOR    = '#7b4d62';
-const SECONDARY_COLOR  = '#ce703f';
-const WHITE            = '#FFFFFF';
-const OFF_WHITE        = '#f8f9fa';
-const SOFT_GRAY        = '#e9ecef';
-const DARK_GRAY        = '#495057';
-const BLACK            = '#000000';
-const LIGHT_PURPLE     = '#e3d5ca';
-const LIGHT_ORANGE     = '#f4e4d6';
-const SUCCESS_COLOR    = '#28a745';
+const PRIMARY_COLOR = '#7b4d62';
+const SECONDARY_COLOR = '#ce703f';
+const WHITE = '#FFFFFF';
+const OFF_WHITE = '#f8f9fa';
+const SOFT_GRAY = '#e9ecef';
+const DARK_GRAY = '#495057';
+const BLACK = '#000000';
+const LIGHT_PURPLE = '#e3d5ca';
+const LIGHT_ORANGE = '#f4e4d6';
+const SUCCESS_COLOR = '#28a745';
 
 const STATUS_BAR_OFFSET = Platform.OS === 'android'
   ? (StatusBar.currentHeight ?? 24) + 10
   : 10;
-
-/* Mock data - will be updated with dynamic data */
-const cardsData = [
-  { 
-    id: '1', 
-    title: 'Daily Verse',  
-    description: 'Your daily scripture reading.',
-    content: `"For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." - John 3:16
-
-This verse reminds us of God's immense love for humanity. Through Jesus Christ, we are offered salvation and eternal life. Take a moment to reflect on this profound truth and how it applies to your life today.`
-  },
-  { 
-    id: '2', 
-    title: 'Prayer Time',  
-    description: 'Suggested prayer based on the day.',
-    content: `Heavenly Father, thank you for this new day and the blessings you have given me. Help me to walk in your ways and to be a light to others. Guide my thoughts, words, and actions so they may bring glory to your name. In Jesus' name, Amen.`
-  },
-  { 
-    id: '3', 
-    title: 'Reflection',   
-    description: 'Take a moment to reflect.',
-    content: `Today's Reflection: Gratitude
-
-Take a moment to think about three things you're grateful for today. It could be something as simple as a warm cup of coffee or as profound as the love of family and friends. Gratitude opens our hearts to see God's blessings in our daily lives.`
-  },
-];
 
 /* Enable LayoutAnimation on Android */
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+/* Helper function to parse book name from passage reference */
+const parseBookFromPassage = (passage: string): string => {
+  if (!passage) return 'Unknown';
+  
+  // Handle multi-word books like "1 John", "2 Corinthians", "Song of Solomon"
+  // Pattern: optional number + space + book name + space + chapter:verse
+  const match = passage.match(/^(\d*\s*[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?)/i);
+  
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  
+  // Fallback: just take the first word
+  return passage.split(' ')[0];
+};
+
 /* Helper function to normalize book names */
 const normalizeBookName = (bookName: string): string => {
-  const bookNameMap: { [key: string]: string } = {
-    'Matt': 'Matthew',
-    'Matt.': 'Matthew',
-    'Mark': 'Mark',
-    'Luke': 'Luke',
-    'John': 'John',
-    // Add more mappings as needed
-  };
+  if (!bookName) return 'Unknown';
   
+  const bookNameMap: { [key: string]: string } = {
+    // Old Testament
+    'Gen': 'Genesis', 'Gen.': 'Genesis',
+    'Exod': 'Exodus', 'Exod.': 'Exodus', 'Ex': 'Exodus', 'Ex.': 'Exodus',
+    'Lev': 'Leviticus', 'Lev.': 'Leviticus',
+    'Num': 'Numbers', 'Num.': 'Numbers',
+    'Deut': 'Deuteronomy', 'Deut.': 'Deuteronomy', 'Dt': 'Deuteronomy',
+    'Josh': 'Joshua', 'Josh.': 'Joshua',
+    'Judg': 'Judges', 'Judg.': 'Judges',
+    'Ruth': 'Ruth',
+    '1 Sam': '1 Samuel', '1Sam': '1 Samuel', '1 Sam.': '1 Samuel',
+    '2 Sam': '2 Samuel', '2Sam': '2 Samuel', '2 Sam.': '2 Samuel',
+    '1 Kgs': '1 Kings', '1Kgs': '1 Kings', '1 Kgs.': '1 Kings', '1 Ki': '1 Kings',
+    '2 Kgs': '2 Kings', '2Kgs': '2 Kings', '2 Kgs.': '2 Kings', '2 Ki': '2 Kings',
+    '1 Chr': '1 Chronicles', '1Chr': '1 Chronicles', '1 Chr.': '1 Chronicles',
+    '2 Chr': '2 Chronicles', '2Chr': '2 Chronicles', '2 Chr.': '2 Chronicles',
+    'Ezra': 'Ezra',
+    'Neh': 'Nehemiah', 'Neh.': 'Nehemiah',
+    'Esth': 'Esther', 'Esth.': 'Esther',
+    'Job': 'Job',
+    'Ps': 'Psalms', 'Ps.': 'Psalms', 'Psa': 'Psalms', 'Psalm': 'Psalms',
+    'Prov': 'Proverbs', 'Prov.': 'Proverbs', 'Pr': 'Proverbs',
+    'Eccl': 'Ecclesiastes', 'Eccl.': 'Ecclesiastes', 'Ecc': 'Ecclesiastes',
+    'Song': 'Song of Solomon', 'Song.': 'Song of Solomon', 'SS': 'Song of Solomon',
+    'Isa': 'Isaiah', 'Isa.': 'Isaiah', 'Is': 'Isaiah',
+    'Jer': 'Jeremiah', 'Jer.': 'Jeremiah',
+    'Lam': 'Lamentations', 'Lam.': 'Lamentations',
+    'Ezek': 'Ezekiel', 'Ezek.': 'Ezekiel', 'Eze': 'Ezekiel',
+    'Dan': 'Daniel', 'Dan.': 'Daniel',
+    'Hos': 'Hosea', 'Hos.': 'Hosea',
+    'Joel': 'Joel',
+    'Amos': 'Amos',
+    'Obad': 'Obadiah', 'Obad.': 'Obadiah',
+    'Jonah': 'Jonah', 'Jon': 'Jonah',
+    'Mic': 'Micah', 'Mic.': 'Micah',
+    'Nah': 'Nahum', 'Nah.': 'Nahum',
+    'Hab': 'Habakkuk', 'Hab.': 'Habakkuk',
+    'Zeph': 'Zephaniah', 'Zeph.': 'Zephaniah', 'Zep': 'Zephaniah',
+    'Hag': 'Haggai', 'Hag.': 'Haggai',
+    'Zech': 'Zechariah', 'Zech.': 'Zechariah', 'Zec': 'Zechariah',
+    'Mal': 'Malachi', 'Mal.': 'Malachi',
+    
+    // New Testament
+    'Matt': 'Matthew', 'Matt.': 'Matthew', 'Mt': 'Matthew',
+    'Mark': 'Mark', 'Mk': 'Mark',
+    'Luke': 'Luke', 'Lk': 'Luke',
+    'John': 'John', 'Jn': 'John',
+    'Acts': 'Acts',
+    'Rom': 'Romans', 'Rom.': 'Romans',
+    '1 Cor': '1 Corinthians', '1Cor': '1 Corinthians', '1 Cor.': '1 Corinthians',
+    '2 Cor': '2 Corinthians', '2Cor': '2 Corinthians', '2 Cor.': '2 Corinthians',
+    'Gal': 'Galatians', 'Gal.': 'Galatians',
+    'Eph': 'Ephesians', 'Eph.': 'Ephesians',
+    'Phil': 'Philippians', 'Phil.': 'Philippians',
+    'Col': 'Colossians', 'Col.': 'Colossians',
+    '1 Thess': '1 Thessalonians', '1Thess': '1 Thessalonians', '1 Thess.': '1 Thessalonians',
+    '2 Thess': '2 Thessalonians', '2Thess': '2 Thessalonians', '2 Thess.': '2 Thessalonians',
+    '1 Tim': '1 Timothy', '1Tim': '1 Timothy', '1 Tim.': '1 Timothy',
+    '2 Tim': '2 Timothy', '2Tim': '2 Timothy', '2 Tim.': '2 Timothy',
+    'Titus': 'Titus', 'Tit': 'Titus',
+    'Phlm': 'Philemon', 'Phlm.': 'Philemon',
+    'Heb': 'Hebrews', 'Heb.': 'Hebrews',
+    'Jas': 'James', 'Jas.': 'James', 'Jam': 'James',
+    '1 Pet': '1 Peter', '1Pet': '1 Peter', '1 Pet.': '1 Peter',
+    '2 Pet': '2 Peter', '2Pet': '2 Peter', '2 Pet.': '2 Peter',
+    '1 John': '1 John', '1John': '1 John', '1 Jn': '1 John', '1Jn': '1 John',
+    '2 John': '2 John', '2John': '2 John', '2 Jn': '2 John', '2Jn': '2 John',
+    '3 John': '3 John', '3John': '3 John', '3 Jn': '3 John', '3Jn': '3 John',
+    'Jude': 'Jude',
+    'Rev': 'Revelation', 'Rev.': 'Revelation',
+    
+    // Already full names (passthrough - only books not already defined)
+    'Genesis': 'Genesis', 'Exodus': 'Exodus', 'Leviticus': 'Leviticus', 'Numbers': 'Numbers', 'Deuteronomy': 'Deuteronomy',
+    'Joshua': 'Joshua', 'Judges': 'Judges', '1 Samuel': '1 Samuel', '2 Samuel': '2 Samuel',
+    '1 Kings': '1 Kings', '2 Kings': '2 Kings', '1 Chronicles': '1 Chronicles', '2 Chronicles': '2 Chronicles',
+    'Nehemiah': 'Nehemiah', 'Esther': 'Esther', 'Psalms': 'Psalms', 'Proverbs': 'Proverbs',
+    'Ecclesiastes': 'Ecclesiastes', 'Song of Solomon': 'Song of Solomon', 'Isaiah': 'Isaiah', 'Jeremiah': 'Jeremiah',
+    'Lamentations': 'Lamentations', 'Ezekiel': 'Ezekiel', 'Daniel': 'Daniel', 'Hosea': 'Hosea',
+    'Obadiah': 'Obadiah', 'Micah': 'Micah', 'Nahum': 'Nahum', 'Habakkuk': 'Habakkuk',
+    'Zephaniah': 'Zephaniah', 'Haggai': 'Haggai', 'Zechariah': 'Zechariah', 'Malachi': 'Malachi',
+    'Matthew': 'Matthew', 'Romans': 'Romans', '1 Corinthians': '1 Corinthians', '2 Corinthians': '2 Corinthians',
+    'Galatians': 'Galatians', 'Ephesians': 'Ephesians', 'Philippians': 'Philippians', 'Colossians': 'Colossians',
+    '1 Thessalonians': '1 Thessalonians', '2 Thessalonians': '2 Thessalonians', '1 Timothy': '1 Timothy',
+    '2 Timothy': '2 Timothy', 'Philemon': 'Philemon', 'Hebrews': 'Hebrews', 'James': 'James',
+    '1 Peter': '1 Peter', '2 Peter': '2 Peter', 'Revelation': 'Revelation',
+  };
+
   return bookNameMap[bookName] || bookName;
+};
+
+/* Helper function to normalize a full reference (e.g., "Jer 29:11" -> "Jeremiah 29:11") */
+const normalizeReference = (reference: string): string => {
+  if (!reference) return '';
+  
+  // Extract the book name from the reference
+  const bookPart = parseBookFromPassage(reference);
+  const normalizedBook = normalizeBookName(bookPart);
+  
+  // Replace the book part with the normalized version
+  return reference.replace(bookPart, normalizedBook);
+};
+
+/* Helper function to clean verse text from special characters */
+const cleanVerseText = (text: string): string => {
+  if (!text) return '';
+  
+  let cleanedText = text;
+  
+  // Remove leading verse numbers like "1. ", "2. ", "1 ", "2 "
+  cleanedText = cleanedText.replace(/^\d+\.?\s*/, '');
+  
+  // Remove leading brackets and special characters
+  cleanedText = cleanedText.replace(/^["'„"'‚«»\[\]\(\)\{\}\s\u201C\u201D\u2018\u2019\u00AB\u00BB]+/, '');
+  
+  // Remove trailing cross-references like "1 John 4:9 : See John 3:16"
+  // This pattern looks for a book abbreviation followed by chapter:verse at the end
+  cleanedText = cleanedText.replace(/\s+\d*\s*[A-Za-z]+\.?\s+\d+:\d+\s*:.*$/i, '');
+  
+  // Remove any other trailing reference patterns like ": See [reference]"
+  cleanedText = cleanedText.replace(/\s*:\s*See\s+.*$/i, '');
+  
+  // Trim any remaining leading/trailing whitespace
+  return cleanedText.trim();
 };
 
 interface CardData {
@@ -121,7 +232,7 @@ interface PrayerStory {
 
 export default function HomeScreen() {
   const { showLoading, hideLoading } = useLoading();
-  const [selectedCard,setSelectedCard] = useState<string | null>('1'); // First card always opened
+  const [selectedCard, setSelectedCard] = useState<string | null>('1'); // First card always opened
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [showReadModal, setShowReadModal] = useState(false);
   const [currentReadContent, setCurrentReadContent] = useState('');
@@ -137,33 +248,36 @@ export default function HomeScreen() {
   const [lastReflectionFetch, setLastReflectionFetch] = useState<number | null>(null);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
   const [currentTheme, setCurrentTheme] = useState<string>('');
-  
+
   // Prayer stories state
-  const [prayerStories, setPrayerStories] = useState<any[]>([]);
+  const {
+    data: prayerStories,
+    loading: loadingPrayerStories,
+    error: prayerStoriesError
+  } = useDailyContent(fetchPrayerStoriesApi, [], []);
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [selectedStory, setSelectedStory] = useState<any>(null);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
-  const [lastStoriesFetch, setLastStoriesFetch] = useState<number | null>(null);
-  
+
   // View More modal state
   const [showViewMoreModal, setShowViewMoreModal] = useState(false);
   const [viewMoreContent, setViewMoreContent] = useState('');
   const [viewMoreTitle, setViewMoreTitle] = useState('');
-  
+
   const [userData, setUserData] = useState<any>(null);
   const [welcomeOpacity] = useState(new Animated.Value(0));
-  
+
   // Usage and Streak data from hooks (local) - real-time updates every second
   const appUsage = useAppUsage(1000); // Update every 1 second
   const todayUsage = useTodayUsage(1000); // Update every 1 second
   const streakData = useStreak();
-  
-  
+
+
   // Backend API data
   const [backendUsage, setBackendUsage] = useState<any>(null);
   const [backendStreak, setBackendStreak] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(true);
-  
+
   // TTS functionality
   const {
     isPlaying,
@@ -183,24 +297,41 @@ export default function HomeScreen() {
   const [showVoiceSelector, setShowVoiceSelector] = useState(false);
 
   // Activity tracking state
-  const [cardReadTimers, setCardReadTimers] = useState<{[key: string]: NodeJS.Timeout | null}>({});
-  const [cardReadStartTimes, setCardReadStartTimes] = useState<{[key: string]: number}>({});
+  const [cardReadTimers, setCardReadTimers] = useState<{ [key: string]: NodeJS.Timeout | null }>({});
+  const [cardReadStartTimes, setCardReadStartTimes] = useState<{ [key: string]: number }>({});
   const [completedActivities, setCompletedActivities] = useState<Set<string>>(new Set());
   const sessionTracker = AppSessionTracker.getInstance();
+  const isMounted = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Sync selected voice with settings
   useEffect(() => {
     setSelectedVoice(settings.voice);
   }, [settings.voice]);
 
-  // Cleanup timers on unmount
+  // Cleanup timers and abort controllers on unmount
   useEffect(() => {
+    isMounted.current = true;
+    
     return () => {
+      isMounted.current = false;
+      
+      // Clear all timers
       Object.values(cardReadTimers).forEach(timer => {
         if (timer) clearTimeout(timer);
       });
+      
+      // Abort any pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      // Stop TTS if playing
+      if (isPlaying) {
+        stop();
+      }
     };
-  }, [cardReadTimers]);
+  }, []);
 
   // Calculate gamification metrics
   const [backendDailyGoals, setBackendDailyGoals] = useState<any>(null);
@@ -208,11 +339,13 @@ export default function HomeScreen() {
   // Load backend daily goals from cache
   useEffect(() => {
     const loadBackendGoals = async () => {
+      if (!isMounted.current) return;
+      
       try {
         const cached = await SecureStore.getItemAsync('sessionData');
-        if (cached) {
-          const data = JSON.parse(cached);
-          if (data.dailyGoals) {
+        if (cached && isMounted.current) {
+          const data = safeJsonParse(cached, null);
+          if (data?.dailyGoals) {
             setBackendDailyGoals(data.dailyGoals);
           }
         }
@@ -239,7 +372,7 @@ export default function HomeScreen() {
     const completedGoals = [dailyVerse, dailyPrayer, dailyReflection].filter(Boolean).length;
     const totalGoals = 3;
     const progressPercentage = (completedGoals / totalGoals) * 100;
-    
+
     return {
       completedGoals,
       totalGoals,
@@ -280,53 +413,51 @@ export default function HomeScreen() {
     }
   }, [dailyProgress.allMissionsComplete]);
 
-  
-
   /* ───── Dynamic Cards Data ───── */
   const getCardsData = () => [
-    { 
-      id: '1', 
-      title: 'Daily Verse',  
-      description: dailyVerse 
-          ? `Today's scripture from ${normalizeBookName(dailyVerse.book)}` 
-          : 'Your daily scripture reading.',
-      content: dailyVerse 
-          ? `"${dailyVerse.text}" - ${dailyVerse.reference}
+    {
+      id: '1',
+      title: 'Daily Verse',
+      description: dailyVerse
+        ? `Today's scripture from ${normalizeBookName(dailyVerse.book)}`
+        : 'Your daily scripture reading.',
+      content: dailyVerse
+        ? `"${cleanVerseText(dailyVerse.text)}" - ${normalizeReference(dailyVerse.reference)}
 
 This verse from ${normalizeBookName(dailyVerse.book)} reminds us of God's truth and guidance. Take a moment to reflect on how this scripture speaks to your heart today.`
-          : `"For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." - John 3:16
+        : `"For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life." - John 3:16
 
 This verse reminds us of God's immense love for humanity. Through Jesus Christ, we are offered salvation and eternal life. Take a moment to reflect on this profound truth and how it applies to your life today.`
     },
-    { 
-      id: '2', 
-      title: 'Daily Prayer',  
-      description: dailyPrayer 
-          ? `Today's ${dailyPrayer.category} verse` 
-          : 'Suggested prayer based on the day.',
-      content: dailyPrayer 
-          ? `"${dailyPrayer.text}" - ${dailyPrayer.reference}
+    {
+      id: '2',
+      title: 'Daily Prayer',
+      description: dailyPrayer
+        ? `Today's ${dailyPrayer.category} verse`
+        : 'Suggested prayer based on the day.',
+      content: dailyPrayer
+        ? `"${cleanVerseText(dailyPrayer.text)}" - ${normalizeReference(dailyPrayer.reference)}
 
-This ${dailyPrayer.category} verse from ${normalizeBookName(dailyPrayer.book)} reminds us of God's presence and care. Take a moment to reflect on how this scripture speaks to your heart today.
-
-Progress: ${dailyPrayer.totalVersesInCategory - dailyPrayer.remainingVerses + 1} of ${dailyPrayer.totalVersesInCategory} verses in this category.`
-          : `Heavenly Father, thank you for this new day and the blessings you have given me. Help me to walk in your ways and to be a light to others. Guide my thoughts, words, and actions so they may bring glory to your name. In Jesus' name, Amen.`
+This ${dailyPrayer.category} verse from ${normalizeBookName(dailyPrayer.book)} reminds us of God's presence and care. Take a moment to reflect on how this scripture speaks to your heart today.`
+        : `Heavenly Father, thank you for this new day and the blessings you have given me. Help me to walk in your ways and to be a light to others. Guide my thoughts, words, and actions so they may bring glory to your name. In Jesus' name, Amen.`
     },
-    { 
-      id: '3', 
-      title: 'Daily Reflection',   
-      description: dailyReflection 
-          ? `Today's reflection on ${currentTheme}` 
-          : 'Take a moment to reflect.',
-      content: dailyReflection 
-          ? `Today's Reflection: ${currentTheme}
+    {
+      id: '3',
+      title: 'Daily Reflection',
+      description: dailyReflection
+        ? `Today's reflection on ${currentTheme}`
+        : 'Take a moment to reflect.',
+      content: dailyReflection
+        ? `Today's Reflection: ${currentTheme}
 
 ${dailyReflection.content || dailyReflection.reflection || `Take a moment to reflect on ${currentTheme} and how it applies to your life today. Consider the ways this theme has appeared in your experiences and what God might be teaching you through it.`}`
-          : `Today's Reflection: Gratitude
+        : `Today's Reflection: Gratitude
 
 Take a moment to think about three things you're grateful for today. It could be something as simple as a warm cup of coffee or as profound as the love of family and friends. Gratitude opens our hearts to see God's blessings in our daily lives.`
     },
   ];
+
+  const cardsData = useMemo(() => getCardsData(), [dailyVerse, dailyPrayer, dailyReflection, currentTheme]);
 
   /* ───── Effects ───── */
   useEffect(() => {
@@ -335,21 +466,19 @@ Take a moment to think about three things you're grateful for today. It could be
     loadStoredVerseData();
     loadStoredReflectionData();
     loadUserData();
-    
+
     // Defer API calls to after UI renders
     const deferredInit = setTimeout(() => {
-    fetchPrayerStories();
-    
-    // Fetch usage and streak data
-    fetchUsageData();
-    fetchStreakData();
+      // Fetch usage and streak data
+      fetchUsageData();
+      fetchStreakData();
     }, 500); // Wait 500ms for UI to render first
-    
+
     // Start activity tracking
     const activityTracker = ActivityTrackerService.getInstance();
     activityTracker.startStudySession();
     activityTracker.checkAndResetForNewDay();
-    
+
     // Animate welcome message
     Animated.timing(welcomeOpacity, {
       toValue: 1,
@@ -357,12 +486,12 @@ Take a moment to think about three things you're grateful for today. It could be
       delay: 300,
       useNativeDriver: true,
     }).start();
-    
+
     // Mark first load as complete after initialization
     if (isFirstLoad) {
       setIsFirstLoad(false);
     }
-    
+
     // Cleanup: stop study session and sync data when component unmounts
     return () => {
       clearTimeout(deferredInit);
@@ -374,12 +503,12 @@ Take a moment to think about three things you're grateful for today. It could be
   // Refresh prayer stories when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      // Force refresh prayer stories when user returns to home screen
-      fetchPrayerStories(true);
-      
+      // Note: Prayer stories are managed by useDailyContent hook
+      // They will refresh automatically when the hook's dependencies change
+
       // Check if Bible version was changed
       checkBibleVersionChange();
-      
+
       // Reload user data in case profile picture was updated
       loadUserData();
     }, [])
@@ -389,16 +518,16 @@ Take a moment to think about three things you're grateful for today. It could be
   const checkBibleVersionChange = async () => {
     try {
       const bibleVersionChanged = await SecureStore.getItemAsync('bibleVersionChanged');
-      
+
       if (bibleVersionChanged === 'true') {
         console.log('📖 Bible version changed detected! Hard refreshing all daily content...');
-        
+
         // Clear the flag
         await SecureStore.deleteItemAsync('bibleVersionChanged');
-        
+
         // Hard refresh all daily content
         showLoading('Refreshing with new Bible version...');
-        
+
         // Clear all cached data
         setDailyVerse(null);
         setDailyPrayer(null);
@@ -406,16 +535,16 @@ Take a moment to think about three things you're grateful for today. It could be
         setLastVerseFetch(null);
         setLastPrayerFetch(null);
         setLastReflectionFetch(null);
-        
+
         // Fetch fresh data
         await Promise.all([
           fetchDailyVerse('comfort', false),
           fetchDailyPrayer('comfort', false),
           fetchDailyReflection('gratitude', false)
         ]);
-        
+
         hideLoading();
-        
+
         console.log('✅ All daily content refreshed with new Bible version!');
       }
     } catch (error) {
@@ -430,11 +559,10 @@ Take a moment to think about three things you're grateful for today. It could be
       checkAndFetchDailyPrayer();
       checkAndFetchDailyVerse();
       checkAndFetchDailyReflection();
-      fetchPrayerStories();
     }, 60000); // Check every minute
 
     return () => clearInterval(interval);
-  }, [lastPrayerFetch, lastVerseFetch, lastReflectionFetch, lastStoriesFetch]);
+  }, [lastPrayerFetch, lastVerseFetch, lastReflectionFetch]);
 
   /* ───── Daily Prayer Storage & Auto-refresh ───── */
   const loadStoredPrayerData = async () => {
@@ -442,16 +570,16 @@ Take a moment to think about three things you're grateful for today. It could be
       // Load stored prayer data
       const storedPrayer = await SecureStore.getItemAsync('dailyPrayerData');
       const storedFetchTime = await SecureStore.getItemAsync('lastPrayerFetch');
-      
+
       if (storedPrayer && storedFetchTime) {
-        const prayerData = JSON.parse(storedPrayer);
+        const prayerData = safeJsonParse(storedPrayer, null);
         const fetchTime = parseInt(storedFetchTime);
-        
+
         setDailyPrayer(prayerData);
         setLastPrayerFetch(fetchTime);
-        
+
         console.log('📱 Loaded stored daily prayer data from:', new Date(fetchTime).toLocaleString());
-        
+
         // Check if 24 hours have passed
         checkAndFetchDailyPrayer(fetchTime);
       } else {
@@ -470,18 +598,19 @@ Take a moment to think about three things you're grateful for today. It could be
     const now = Date.now();
     const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const timeToCheck = lastFetchTime || lastPrayerFetch;
-    
+
     if (timeToCheck) {
       const hoursPassed = (now - timeToCheck) / (1000 * 60 * 60);
       console.log(`⏰ Daily Prayer: ${hoursPassed.toFixed(2)} hours since last fetch`);
     }
-    
+
     // Production: Check if 24 hours have passed
-    if (!timeToCheck || (now - timeToCheck) >= twentyFourHours) {
-      console.log('🔄 24 hours passed, fetching new daily prayer');
+    // FORCE REFRESH ENABLED FOR TESTING
+    if (true) {
+      // Original condition: if (!timeToCheck || (now - timeToCheck) >= twentyFourHours) {
+      console.log('🔄 Force refreshing daily prayer for testing');
       await fetchDailyPrayer('comfort');
     } else {
-      console.log('⏭️  Skipping daily prayer fetch - using cached data');
     }
   };
 
@@ -490,7 +619,7 @@ Take a moment to think about three things you're grateful for today. It could be
       const now = Date.now();
       await SecureStore.setItemAsync('dailyPrayerData', JSON.stringify(prayerData));
       await SecureStore.setItemAsync('lastPrayerFetch', now.toString());
-      
+
       setLastPrayerFetch(now);
       console.log('💾 Saved daily prayer data and timestamp');
     } catch (error) {
@@ -504,16 +633,16 @@ Take a moment to think about three things you're grateful for today. It could be
       // Load stored verse data
       const storedVerse = await SecureStore.getItemAsync('dailyVerseData');
       const storedFetchTime = await SecureStore.getItemAsync('lastVerseFetch');
-      
+
       if (storedVerse && storedFetchTime) {
-        const verseData = JSON.parse(storedVerse);
+        const verseData = safeJsonParse(storedVerse, null);
         const fetchTime = parseInt(storedFetchTime);
-        
+
         setDailyVerse(verseData);
         setLastVerseFetch(fetchTime);
-        
+
         console.log('📱 Loaded stored daily verse data from:', new Date(fetchTime).toLocaleString());
-        
+
         // Check if 24 hours have passed
         checkAndFetchDailyVerse(fetchTime);
       } else {
@@ -532,18 +661,19 @@ Take a moment to think about three things you're grateful for today. It could be
     const now = Date.now();
     const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const timeToCheck = lastFetchTime || lastVerseFetch;
-    
+
     if (timeToCheck) {
       const hoursPassed = (now - timeToCheck) / (1000 * 60 * 60);
       console.log(`⏰ Daily Verse: ${hoursPassed.toFixed(2)} hours since last fetch`);
     }
-    
+
     // Production: Check if 24 hours have passed
-    if (!timeToCheck || (now - timeToCheck) >= twentyFourHours) {
-      console.log('🔄 24 hours passed, fetching new daily verse');
+    // FORCE REFRESH ENABLED FOR TESTING
+    if (true) {
+      // Original condition: if (!timeToCheck || (now - timeToCheck) >= twentyFourHours) {
+      console.log('🔄 Force refreshing daily verse for testing');
       await fetchDailyVerse('comfort');
     } else {
-      console.log('⏭️  Skipping daily verse fetch - using cached data');
     }
   };
 
@@ -552,7 +682,7 @@ Take a moment to think about three things you're grateful for today. It could be
       const now = Date.now();
       await SecureStore.setItemAsync('dailyVerseData', JSON.stringify(verseData));
       await SecureStore.setItemAsync('lastVerseFetch', now.toString());
-      
+
       setLastVerseFetch(now);
       console.log('💾 Saved daily verse data and timestamp');
     } catch (error) {
@@ -567,17 +697,17 @@ Take a moment to think about three things you're grateful for today. It could be
       const storedReflection = await SecureStore.getItemAsync('dailyReflectionData');
       const storedFetchTime = await SecureStore.getItemAsync('lastReflectionFetch');
       const storedTheme = await SecureStore.getItemAsync('currentReflectionTheme');
-      
+
       if (storedReflection && storedFetchTime && storedTheme) {
-        const reflectionData = JSON.parse(storedReflection);
+        const reflectionData = safeJsonParse(storedReflection, null);
         const fetchTime = parseInt(storedFetchTime);
-        
+
         setDailyReflection(reflectionData);
         setLastReflectionFetch(fetchTime);
         setCurrentTheme(storedTheme);
-        
+
         console.log('📱 Loaded stored daily reflection data from:', new Date(fetchTime).toLocaleString(), 'Theme:', storedTheme);
-        
+
         // Check if 24 hours have passed
         checkAndFetchDailyReflection(fetchTime);
       } else {
@@ -596,12 +726,12 @@ Take a moment to think about three things you're grateful for today. It could be
     const now = Date.now();
     const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const timeToCheck = lastFetchTime || lastReflectionFetch;
-    
+
     if (timeToCheck) {
       const hoursPassed = (now - timeToCheck) / (1000 * 60 * 60);
       console.log(`⏰ Daily Reflection: ${hoursPassed.toFixed(2)} hours since last fetch`);
     }
-    
+
     if (!timeToCheck || (now - timeToCheck) >= twentyFourHours) {
       console.log('🔄 24 hours have passed, fetching new daily reflection with random theme');
       await fetchReflectionThemes();
@@ -614,7 +744,7 @@ Take a moment to think about three things you're grateful for today. It could be
       await SecureStore.setItemAsync('dailyReflectionData', JSON.stringify(reflectionData));
       await SecureStore.setItemAsync('lastReflectionFetch', now.toString());
       await SecureStore.setItemAsync('currentReflectionTheme', theme);
-      
+
       setLastReflectionFetch(now);
       setCurrentTheme(theme);
       console.log('💾 Saved daily reflection data and timestamp with theme:', theme);
@@ -628,13 +758,13 @@ Take a moment to think about three things you're grateful for today. It could be
     try {
       // HARDCODED FOR NOW - Comment out API call
       console.log('💭 Using hardcoded reflection theme');
-      
+
       const hardcodedThemes = ['Hope', 'Faith', 'Love', 'Peace', 'Gratitude', 'Strength'];
       const randomTheme = hardcodedThemes[Math.floor(Math.random() * hardcodedThemes.length)];
-      
+
       console.log('🎯 Selected random theme:', randomTheme);
       await fetchDailyReflection(randomTheme);
-      
+
       /* COMMENTED OUT - API CALL
       const token = await SecureStore.getItemAsync('authToken');
       
@@ -682,10 +812,10 @@ Take a moment to think about three things you're grateful for today. It could be
       if (showLoader) {
         showLoading('Loading daily reflection...');
       }
-      
+
       // HARDCODED FOR NOW - Comment out API call
       console.log('💭 Using hardcoded daily reflection for theme:', theme);
-      
+
       const reflectionTexts: { [key: string]: string } = {
         'Hope': 'Hope is the anchor of the soul. In Christ, we find hope that never disappoints, a promise of eternal life, and the assurance that God works all things together for good.',
         'Faith': 'Faith is being sure of what we hope for and certain of what we do not see. Through faith, we please God and receive His promises.',
@@ -694,7 +824,7 @@ Take a moment to think about three things you're grateful for today. It could be
         'Gratitude': 'Give thanks in all circumstances, for this is God\'s will for you in Christ Jesus. A grateful heart recognizes God\'s blessings and draws us closer to Him.',
         'Strength': 'I can do all things through Christ who strengthens me. In our weakness, His strength is made perfect, and His grace is sufficient for us.',
       };
-      
+
       const hardcodedReflection = {
         theme: theme,
         text: reflectionTexts[theme] || 'Take time today to reflect on God\'s goodness and faithfulness in your life.',
@@ -702,10 +832,10 @@ Take a moment to think about three things you're grateful for today. It could be
         verse: 'May the God of hope fill you with all joy and peace as you trust in him, so that you may overflow with hope by the power of the Holy Spirit.',
         date: new Date().toISOString(),
       };
-      
+
       setDailyReflection(hardcodedReflection);
       await saveReflectionData(hardcodedReflection, theme);
-      
+
       /* COMMENTED OUT - API CALL
       const token = await SecureStore.getItemAsync('authToken');
       
@@ -746,115 +876,6 @@ Take a moment to think about three things you're grateful for today. It could be
     }
   };
 
-  /* ───── Prayer Stories API ───── */
-  const fetchPrayerStories = async (forceRefresh = false) => {
-    try {
-      const token = await SecureStore.getItemAsync('authToken');
-      if (!token) {
-        return;
-      }
-      
-      const response = await fetch(API_ENDPOINTS.PRAYER_REQUESTS, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Check different possible data structures
-        let requests = null;
-        if (data.data && data.data.requests) {
-          requests = data.data.requests;
-        } else if (data.requests) {
-          requests = data.requests;
-        } else if (data.data && Array.isArray(data.data)) {
-          requests = data.data;
-        } else if (Array.isArray(data)) {
-          requests = data;
-        }
-        
-        if (requests && Array.isArray(requests)) {
-          // Process all prayers and group by user
-          const allPrayers = requests.map((prayer: any) => ({
-              id: prayer.id,
-            userId: prayer.user_id,
-            userName: prayer.is_anonymous ? 'Anonymous' : (prayer.display_name || prayer.author_name || 'Anonymous'),
-            userPicture: prayer.is_anonymous ? null : (prayer.display_picture || prayer.author_picture),
-              title: prayer.title,
-              description: prayer.description,
-              content: prayer.description || prayer.title || 'Prayer request',
-              createdAt: prayer.created_at,
-              responsesCount: prayer.response_count || 0,
-            isAnonymous: prayer.is_anonymous || false,
-              category: prayer.category,
-              isUrgent: prayer.is_urgent || false,
-              status: prayer.status,
-            // Full prayer data for detailed display
-              fullPrayerData: prayer
-          }));
-
-          // Group stories by user (anonymous stories are kept separate)
-          const groupedStories = new Map();
-          
-          allPrayers.forEach((prayer: any) => {
-            // Create a unique key for grouping
-            // Anonymous prayers are grouped separately, even if from same user
-            const groupKey = prayer.isAnonymous 
-              ? `anonymous_${prayer.id}` // Each anonymous story is its own group
-              : `user_${prayer.userId}`; // Same user stories are grouped together
-            
-            if (!groupedStories.has(groupKey)) {
-              groupedStories.set(groupKey, {
-                groupId: groupKey,
-                userId: prayer.userId,
-                userName: prayer.userName,
-                userPicture: prayer.userPicture,
-                isAnonymous: prayer.isAnonymous,
-                stories: []
-              });
-            }
-            
-            groupedStories.get(groupKey).stories.push(prayer);
-          });
-
-          // Convert to array and sort by most recent story in each group
-          const stories = Array.from(groupedStories.values())
-            .map(group => ({
-              ...group,
-              // Sort stories within group by creation date (newest first)
-              stories: group.stories.sort((a: any, b: any) => 
-                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-              ),
-              // Use the most recent story's data for display
-              id: group.stories[0].id,
-              title: group.stories[0].title,
-              description: group.stories[0].description,
-              content: group.stories[0].content,
-              createdAt: group.stories[0].createdAt,
-              responsesCount: group.stories[0].responsesCount,
-              category: group.stories[0].category,
-              isUrgent: group.stories[0].isUrgent,
-              status: group.stories[0].status,
-              fullPrayerData: group.stories[0].fullPrayerData
-            }))
-            .sort((a: any, b: any) => 
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            )
-            .slice(0, 5); // Take only the first 5 groups
-          
-          setPrayerStories(stories);
-          setLastStoriesFetch(Date.now());
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching prayer stories:', error);
-    }
-  };
-
   // Story viewer functions
   const openStoryViewer = (story: any, index: number) => {
     // Set the first story in the group as the current story
@@ -886,24 +907,29 @@ Take a moment to think about three things you're grateful for today. It could be
   // Calculate if content should show "View More" based on screen coverage
   const shouldShowViewMore = (content: string) => {
     if (!content) return false;
-    
+
     // Estimate text height based on content length and line height
     const lineHeight = 24; // Based on prayerCardDescription lineHeight
     const maxWidth = width - 80; // Account for padding
     const charsPerLine = Math.floor(maxWidth / 12); // Approximate characters per line
     const estimatedLines = Math.ceil(content.length / charsPerLine);
     const estimatedHeight = estimatedLines * lineHeight;
-    
+
     // 80% of screen height minus header space (profile pic area)
     const availableHeight = (height * 0.8) - 200; // 200px for header and margins
-    
+
     return estimatedHeight > availableHeight;
   };
 
   const goToNextStory = () => {
+    if (!prayerStories || prayerStories.length === 0) {
+      closeStoryViewer();
+      return;
+    }
+
     const currentGroup = prayerStories[currentStoryIndex];
     const currentStoryInGroup = selectedStory;
-    
+
     // Check if there are more stories in the current group
     if (currentGroup?.stories && currentGroup.stories.length > 1) {
       const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
@@ -913,21 +939,25 @@ Take a moment to think about three things you're grateful for today. It could be
         return;
       }
     }
-    
+
     // Move to next group
     if (currentStoryIndex < prayerStories.length - 1) {
       const nextGroup = prayerStories[currentStoryIndex + 1];
       setCurrentStoryIndex(currentStoryIndex + 1);
       setSelectedStory(nextGroup.stories && nextGroup.stories.length > 0 ? nextGroup.stories[0] : nextGroup);
-      } else {
-        closeStoryViewer();
+    } else {
+      closeStoryViewer();
     }
   };
 
   const goToPreviousStory = () => {
+    if (!prayerStories || prayerStories.length === 0) {
+      return;
+    }
+
     const currentGroup = prayerStories[currentStoryIndex];
     const currentStoryInGroup = selectedStory;
-    
+
     // Check if there are previous stories in the current group
     if (currentGroup?.stories && currentGroup.stories.length > 1) {
       const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
@@ -937,7 +967,7 @@ Take a moment to think about three things you're grateful for today. It could be
         return;
       }
     }
-    
+
     // Move to previous group
     if (currentStoryIndex > 0) {
       const prevGroup = prayerStories[currentStoryIndex - 1];
@@ -981,11 +1011,13 @@ Take a moment to think about three things you're grateful for today. It could be
       // First, load from SecureStore (fast)
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const user = JSON.parse(userDataString);
-        setUserData(user);
-        console.log('👤 User data loaded:', user.name);
+        const user = safeJsonParse(userDataString, null);
+        if (user) {
+          setUserData(user);
+          console.log('👤 User data loaded:', user.name);
+        }
       }
-      
+
       // Then, fetch fresh data from API to get latest profile picture
       try {
         const token = await SecureStore.getItemAsync('authToken');
@@ -996,19 +1028,20 @@ Take a moment to think about three things you're grateful for today. It could be
               'Content-Type': 'application/json',
             },
           });
-          
+
           if (profileResponse.ok) {
             const profileData = await profileResponse.json();
             const freshUser = profileData.user || profileData;
-            
+
             // Update user data with fresh profile picture
+            const existingUser = safeJsonParse(userDataString, {});
             const updatedUser = {
-              ...(userDataString ? JSON.parse(userDataString) : {}),
+              ...existingUser,
               picture: freshUser.picture, // Always use latest picture from backend
-              name: freshUser.name || (userDataString ? JSON.parse(userDataString).name : ''),
-              email: freshUser.email || (userDataString ? JSON.parse(userDataString).email : ''),
+              name: freshUser.name || existingUser.name || '',
+              email: freshUser.email || existingUser.email || '',
             };
-            
+
             // Save to SecureStore and state
             await SecureStore.setItemAsync('userData', JSON.stringify(updatedUser));
             setUserData(updatedUser);
@@ -1031,7 +1064,7 @@ Take a moment to think about three things you're grateful for today. It could be
         console.log('❌ No auth token found for usage data');
         return;
       }
-      
+
       console.log('🔄 Fetching usage data from backend...');
       const response = await fetch(`${API_BASE_URL}/api/users/profile/usage`, {
         method: 'GET',
@@ -1063,7 +1096,7 @@ Take a moment to think about three things you're grateful for today. It could be
         console.log('❌ No auth token found for streak data');
         return;
       }
-      
+
       console.log('🔄 Fetching streak data from backend...');
       const response = await fetch(`${API_BASE_URL}/api/users/profile/streak`, {
         method: 'GET',
@@ -1107,17 +1140,15 @@ Take a moment to think about three things you're grateful for today. It could be
     return `${hours}h ${remainingMinutes}m`;
   };
 
-
-
   /* ───── Daily Verse API ───── */
   const fetchDailyVerse = async (category: string = 'comfort', showLoader: boolean = false) => {
     try {
       if (showLoader) {
         showLoading('Loading daily verse...');
       }
-      
+
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         hideLoading();
         return;
@@ -1125,9 +1156,9 @@ Take a moment to think about three things you're grateful for today. It could be
 
       // Using the new dedicated daily verse endpoint
       const apiUrl = API_ENDPOINTS.DAILY_VERSE;
-      
+
       console.log('📖 Fetching daily verse from:', apiUrl);
-      
+
       // Bible version is automatically detected from user's profile token
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -1144,14 +1175,14 @@ Take a moment to think about three things you're grateful for today. It could be
       }
 
       const result = await response.json();
-      console.log('✅ Daily verse API response:', JSON.stringify(result, null, 2));
-      
+      console.log('🔍 DAILY VERSE RESPONSE:', JSON.stringify(result, null, 2));
+
       if (result.success && result.data) {
         // Transform API response to match expected format
         const verseData = {
           version: result.data.bible || result.data.version || 'KJV',
           category: result.data.category || 'inspiration',
-          book: result.data.passage?.split(' ')[0] || result.data.book || 'John',
+          book: parseBookFromPassage(result.data.passage || result.data.reference || ''),
           chapter: result.data.chapter || 3,
           verse: result.data.verse || 16,
           text: result.data.text || result.data.verseText,
@@ -1160,14 +1191,14 @@ Take a moment to think about three things you're grateful for today. It could be
           remainingVerses: result.data.remainingVerses || 100,
           totalVersesInCategory: result.data.totalVerses || 150,
         };
-        
+
         console.log('📝 Transformed verse data:', verseData);
         console.log('📖 Setting daily verse state with version:', verseData.version);
         console.log('📄 Verse text length:', verseData.text?.length, 'characters');
-        
+
         setDailyVerse(verseData);
         await saveVerseData(verseData);
-        
+
         console.log('✅ Daily verse state updated successfully');
       } else {
         console.log('❌ No daily verse data received');
@@ -1187,9 +1218,9 @@ Take a moment to think about three things you're grateful for today. It could be
       if (showLoader) {
         showLoading('Loading daily prayer...');
       }
-      
+
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         console.log('❌ No auth token found for daily prayer');
         hideLoading();
@@ -1203,7 +1234,7 @@ Take a moment to think about three things you're grateful for today. It could be
       console.log('🙏 Category:', category);
       console.log('🙏 Bible version: Auto-detected from user token');
       console.log('🙏 ═══════════════════════════════════════');
-      
+
       // Bible version is automatically detected from user's profile token
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -1221,13 +1252,13 @@ Take a moment to think about three things you're grateful for today. It could be
 
       const result = await response.json();
       console.log('✅ Daily prayer API response:', JSON.stringify(result, null, 2));
-      
+
       if (result.success && result.data) {
         // Transform API response to match expected format
         const prayerData = {
           version: result.data.bible || 'KJV',
           category: result.data.category,
-          book: result.data.passage?.split(' ')[0] || 'Psalm',
+          book: parseBookFromPassage(result.data.passage || result.data.reference || ''),
           chapter: 23,
           verse: 1,
           text: result.data.text,
@@ -1236,7 +1267,7 @@ Take a moment to think about three things you're grateful for today. It could be
           remainingVerses: 80,
           totalVersesInCategory: 120,
         };
-        
+
         setDailyPrayer(prayerData);
         await savePrayerData(prayerData);
       } else {
@@ -1251,109 +1282,28 @@ Take a moment to think about three things you're grateful for today. It could be
     }
   };
 
-
-
-  /* Toggle card expand */
-  const toggleCard = (id: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const wasOpen = selectedCard === id;
-    setSelectedCard(prev => (prev === id ? null : id));
-
-    if (!wasOpen) {
-      // Card is being OPENED - start tracking read time
-      const startTime = Date.now();
-      setCardReadStartTimes(prev => ({ ...prev, [id]: startTime }));
-
-      // Set a timer: if user keeps card open for 8+ seconds, count as "read"
-      const timer = setTimeout(() => {
-        trackCardRead(id);
-      }, 8000); // 8 seconds
-
-      setCardReadTimers(prev => ({ ...prev, [id]: timer }));
-    } else {
-      // Card is being CLOSED - clear the timer
-      if (cardReadTimers[id]) {
-        clearTimeout(cardReadTimers[id]);
-        setCardReadTimers(prev => ({ ...prev, [id]: null }));
-      }
-    }
-  };
-
-  /* Track when user reads a card (keeps it open for 8+ seconds) */
-  const trackCardRead = (cardId: string) => {
-    const activityKey = `${cardId}_read`;
-    
-    // Don't track if already completed
-    if (completedActivities.has(activityKey)) {
-      return;
-    }
-
-    let activityType: 'daily_verse' | 'daily_prayer' | 'daily_reflection' | undefined;
-    let xpEarned = 10;
-
-    if (cardId === '1') {
-      activityType = 'daily_verse';
-    } else if (cardId === '2') {
-      activityType = 'daily_prayer';
-    } else if (cardId === '3') {
-      activityType = 'daily_reflection';
-    }
-
-    if (activityType) {
-      sessionTracker.trackActivity(activityType, xpEarned, {
-        action: 'read',
-        cardId,
-        duration: 8,
-      });
-
-      // Mark as completed
-      setCompletedActivities(prev => new Set(prev).add(activityKey));
-      console.log(`✅ Tracked: ${activityType} (read) (+${xpEarned} XP)`);
-    }
-  };
-
-  /* Track when user listens to a card (TTS) */
-  const trackCardListen = (cardId: string) => {
-    const activityKey = `${cardId}_listen`;
-    
-    // Don't track if already completed
-    if (completedActivities.has(activityKey)) {
-      return;
-    }
-
-    let activityType: 'daily_verse' | 'daily_prayer' | 'daily_reflection' | undefined;
-    let xpEarned = 15; // More XP for listening
-
-    if (cardId === '1') {
-      activityType = 'daily_verse';
-    } else if (cardId === '2') {
-      activityType = 'daily_prayer';
-    } else if (cardId === '3') {
-      activityType = 'daily_reflection';
-    }
-
-    if (activityType) {
-      sessionTracker.trackActivity(activityType, xpEarned, {
-        action: 'listen',
-        cardId,
-      });
-
-      // Mark as completed
-      setCompletedActivities(prev => new Set(prev).add(activityKey));
-      console.log(`✅ Tracked: ${activityType} (listen) (+${xpEarned} XP)`);
-    }
-  };
-
   /* Handle read action */
   const handleRead = (cardTitle: string) => {
+    console.log('📖 handleRead called for:', cardTitle);
     // Find the card data and show in modal
-    const currentCardsData = getCardsData();
-    const card = currentCardsData.find(c => c.title === cardTitle);
+    const card = cardsData.find(c => c.title === cardTitle);
+    console.log('📖 Card found:', !!card);
     if (card) {
+      console.log('📖 Card data:', {
+        title: card.title,
+        contentLength: card.content?.length,
+        contentPreview: card.content?.substring(0, 50)
+      });
+      console.log('📖 Setting modal state...');
       setCurrentReadTitle(card.title);
       setCurrentReadContent(card.content);
       setShowReadModal(true);
-      
+      console.log('📖 Modal state set:', {
+        showReadModal: true,
+        currentReadTitle: card.title,
+        currentReadContentLength: card.content?.length
+      });
+
       // Track activity based on card type
       const activityTracker = ActivityTrackerService.getInstance();
       if (cardTitle.includes('Prayer') || cardTitle.includes('prayer')) {
@@ -1363,21 +1313,27 @@ Take a moment to think about three things you're grateful for today. It could be
       } else if (cardTitle.includes('Reflection') || cardTitle.includes('reflection')) {
         activityTracker.trackReflectionCompleted();
       }
+    } else {
+      console.log('❌ Card not found!');
     }
   };
 
   /* Handle listen action */
   const handleListen = async (cardTitle: string) => {
+    console.log('🔊 handleListen called for:', cardTitle);
     try {
       // Check if user has set a voice preference
       let savedVoiceId = await SecureStore.getItemAsync('userVoiceId');
-      
+      console.log('🔊 Saved voice ID:', savedVoiceId);
+
       // If not in SecureStore, try loading from TTS settings (which loads from API)
       if (!savedVoiceId && settings.voice) {
         savedVoiceId = settings.voice;
+        console.log('🔊 Using voice from settings:', savedVoiceId);
       }
-      
+
       if (!savedVoiceId) {
+        console.log('❌ No voice configured, showing alert');
         // No voice set - prompt user to go to settings
         Alert.alert(
           'Set Voice Preference',
@@ -1398,37 +1354,44 @@ Take a moment to think about three things you're grateful for today. It could be
         );
         return;
       }
-      
+
       // Voice is set - proceed with TTS
-    const currentCardsData = getCardsData();
-    const card = currentCardsData.find(c => c.title === cardTitle);
-    if (card) {
-      setCurrentTTSTitle(card.title);
-      setCurrentTTSContent(card.content);
-        
+      const card = cardsData.find(c => c.title === cardTitle);
+      console.log('🔊 Card found:', !!card);
+      if (card) {
+        console.log('🔊 Card data:', {
+          title: card.title,
+          contentLength: card.content?.length,
+          contentPreview: card.content?.substring(0, 50)
+        });
+        console.log('🔊 Setting TTS modal state...');
+        setCurrentTTSTitle(card.title);
+        setCurrentTTSContent(card.content);
+
         // Update TTS settings to ensure voice is set
         updateSettings({ voice: savedVoiceId });
-        
+
         // Show modal and start playing with saved voice
         setShowTTSModal(true);
-        
+        console.log('🔊 TTS Modal state set to true');
+
         // Small delay to ensure modal is rendered before speaking
         setTimeout(() => {
+          console.log('🔊 Starting TTS with voice:', savedVoiceId);
           speak(card.content, { voice: savedVoiceId });
-          
-          // Track listen activity
-          trackCardListen(card.id);
         }, 100);
-      
-      // Track activity based on card type
-      const activityTracker = ActivityTrackerService.getInstance();
-      if (cardTitle.includes('Prayer') || cardTitle.includes('prayer')) {
-        activityTracker.trackPrayerSaid();
-      } else if (cardTitle.includes('Verse') || cardTitle.includes('verse')) {
-        activityTracker.trackVerseRead();
-      } else if (cardTitle.includes('Reflection') || cardTitle.includes('reflection')) {
-        activityTracker.trackReflectionCompleted();
-      }
+
+        // Track activity based on card type
+        const activityTracker = ActivityTrackerService.getInstance();
+        if (cardTitle.includes('Prayer') || cardTitle.includes('prayer')) {
+          activityTracker.trackPrayerSaid();
+        } else if (cardTitle.includes('Verse') || cardTitle.includes('verse')) {
+          activityTracker.trackVerseRead();
+        } else if (cardTitle.includes('Reflection') || cardTitle.includes('reflection')) {
+          activityTracker.trackReflectionCompleted();
+        }
+      } else {
+        console.log('❌ Card not found!');
       }
     } catch (error) {
       console.error('❌ Error in handleListen:', error);
@@ -1455,7 +1418,7 @@ Take a moment to think about three things you're grateful for today. It could be
     setSelectedVoice(voiceId);
     updateSettings({ voice: voiceId });
     setShowVoiceSelector(false);
-    
+
     // After voice selection, show TTS modal and start playing
     setShowTTSModal(true);
     speak(currentTTSContent, { voice: voiceId });
@@ -1468,15 +1431,9 @@ Take a moment to think about three things you're grateful for today. It could be
     }
   };
 
-
-
-
-
-
-
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContentContainer}
         showsVerticalScrollIndicator={false}
@@ -1484,727 +1441,314 @@ Take a moment to think about three things you're grateful for today. It could be
         <View style={styles.container}>
           {/* ───── Top Bar ───── */}
           <View style={styles.topBar}>
-          {/* Profile icon */}
-          <TouchableOpacity 
-            style={styles.profileIconContainer}
-            activeOpacity={0.7}
-          >
-            {userData?.picture ? (
-              <Image 
-                source={{ uri: userData.picture }} 
-                style={styles.profileImage}
-                resizeMode="cover"
-                onError={() => {
-                  console.log('❌ Failed to load profile image, falling back to icon');
-                  setUserData((prev: any) => ({ ...prev, picture: null }));
-                }}
-              />
-            ) : (
-              <View style={styles.iconContainer}>
-                <Ionicons name="person" size={40} color={DARK_GRAY} />
-        </View>
-            )}
-          </TouchableOpacity>
+            {/* Profile icon */}
+            <TouchableOpacity
+              style={styles.profileIconContainer}
+              activeOpacity={0.7}
+            >
+              {userData?.picture ? (
+                <Image
+                  source={{ uri: userData.picture }}
+                  style={styles.profileImage}
+                  resizeMode="cover"
+                  onError={() => {
+                    console.log('❌ Failed to load profile image, falling back to icon');
+                    setUserData((prev: any) => ({ ...prev, picture: null }));
+                  }}
+                />
+              ) : (
+                <View style={styles.iconContainer}>
+                  <Ionicons name="person" size={40} color={DARK_GRAY} />
+                </View>
+              )}
+            </TouchableOpacity>
 
-          {/* Welcome Message */}
-          <Animated.View style={[styles.welcomeContainer, { opacity: welcomeOpacity }]}>
+            {/* Welcome Message */}
+            <Animated.View style={[styles.welcomeContainer, { opacity: welcomeOpacity }]}>
+              <LinearGradient
+                colors={['rgba(123, 77, 98, 0.1)', 'rgba(206, 112, 63, 0.1)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.glassBackground}
+              >
+                <View style={styles.glassCard}>
+                  <Text style={styles.welcomeText}>
+                    {getGreeting()}, {userData?.name?.split(' ')[0] || 'Friend'}! 👋
+                  </Text>
+                  <Text style={styles.welcomeSubtext}>
+                    Ready for your spiritual journey today?
+                  </Text>
+                </View>
+              </LinearGradient>
+            </Animated.View>
+          </View>
+
+          {/* ───── Body ───── */}
+          <View style={styles.cardsContainer}>
+            {/* ───── Streak & Progress Header ───── */}
+            {!loadingStats && (
+              <View style={styles.gamificationHeader}>
+                <LinearGradient
+                  colors={['#2C1B47', '#5B3A7D', '#8B5A9E']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.streakCard}
+                >
+                  {/* Top Stats Row */}
+                  <View style={styles.topStatsRow}>
+                    <View style={styles.streakBadge}>
+                      <Ionicons name="flame" size={24} color="#FF6B35" />
+                      <View>
+                        <Text style={styles.streakNumber}>{enhancedStreakData?.currentStreak || 0}</Text>
+                        <Text style={styles.streakDaysLabel}>Day Streak</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.levelBadgeNew}>
+                      <Ionicons name="star" size={20} color="#FFD700" />
+                      <View>
+                        <Text style={styles.levelNumberNew}>Level {enhancedStreakData?.level || 1}</Text>
+                        <Text style={styles.levelLabelNew}>Rank</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Level Progress Bar */}
+                  {enhancedStreakData?.xpToNextLevel ? (
+                    <View style={styles.levelProgressContainer}>
+                      <View style={styles.levelProgressHeader}>
+                        <Text style={styles.levelProgressTitle}>Level Progress</Text>
+                        <Text style={styles.levelProgressXP}>
+                          {enhancedStreakData.totalXP || 0} / {(enhancedStreakData.totalXP || 0) + (enhancedStreakData.xpToNextLevel || 0)} XP
+                        </Text>
+                      </View>
+                      <View style={styles.levelProgressBarBg}>
+                        <LinearGradient
+                          colors={['#FFD700', '#FFA500']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={[
+                            styles.levelProgressBarFill,
+                            { width: `${Math.min(100, ((enhancedStreakData.totalXP || 0) / ((enhancedStreakData.totalXP || 0) + (enhancedStreakData.xpToNextLevel || 1))) * 100)}%` }
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.levelProgressDetail}>
+                        {enhancedStreakData.xpToNextLevel} XP to Level {(enhancedStreakData.level || 1) + 1}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.levelProgressContainer}>
+                      <Text style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', fontSize: 12 }}>
+                        Loading progress...
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Bottom Stats Grid */}
+                  <View style={styles.bottomStatsGrid}>
+                    <View style={styles.statItem}>
+                      <Ionicons name="trophy" size={18} color="#FFD700" />
+                      <Text style={styles.statValue}>{enhancedStreakData?.longestStreak || 0}</Text>
+                      <Text style={styles.statLabel}>Best Streak</Text>
+                    </View>
+
+                    <View style={styles.statDivider} />
+
+                    <View style={styles.statItem}>
+                      <Ionicons name="time" size={18} color="#A78BFA" />
+                      <Text style={styles.statValue}>{formatTime(todayUsage?.seconds || 0)}</Text>
+                      <Text style={styles.statLabel}>Today</Text>
+                    </View>
+
+                    <View style={styles.statDivider} />
+
+                    <View style={styles.statItem}>
+                      <Ionicons name="calendar" size={18} color="#60A5FA" />
+                      <Text style={styles.statValue}>{enhancedStreakData?.totalActiveDays || 0}</Text>
+                      <Text style={styles.statLabel}>Total Days</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+            )}
+
+            {/* ───── Daily Missions (Cards) ───── */}
+            <View style={styles.missionsHeader}>
+              <Ionicons name="clipboard" size={20} color={PRIMARY_COLOR} />
+              <Text style={styles.missionsTitle}>Today's Spiritual Missions</Text>
+            </View>
+
+            {cardsData.map(card => (
+              <DailyCard
+                key={card.id}
+                title={card.title}
+                description={card.description}
+                content={card.content}
+                onPress={() => setSelectedCard(card.id)}
+                onRead={() => handleRead(card.title)}
+                onListen={() => handleListen(card.title)}
+              />
+            ))}
+          </View>
+
+          {/* ───── Achievements & Milestones ───── */}
+          {enhancedStreakData && enhancedStreakData.currentStreak >= 3 && (
+            <View style={styles.achievementsSection}>
+              <View style={styles.achievementsHeader}>
+                <Ionicons name="trophy" size={20} color="#FFD700" />
+                <Text style={styles.achievementsTitle}>Your Achievements</Text>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.achievementsScroll}
+              >
+                {/* Streak Milestones */}
+                {[3, 7, 14, 30, 60, 100].map((days) => {
+                  const achieved = (enhancedStreakData.longestStreak || 0) >= days;
+                  return (
+                    <View
+                      key={days}
+                      style={[
+                        styles.achievementCard,
+                        achieved ? styles.achievementAchieved : styles.achievementLocked
+                      ]}
+                    >
+                      <View style={styles.achievementBadge}>
+                        <Ionicons
+                          name={achieved ? "medal" : "lock-closed"}
+                          size={32}
+                          color={achieved ? "#FFD700" : "#999"}
+                        />
+                      </View>
+                      <Text style={[
+                        styles.achievementName,
+                        achieved && styles.achievementNameAchieved
+                      ]}>
+                        {days} Day Streak
+                      </Text>
+                      {achieved && (
+                        <Text style={styles.achievementDate}>Unlocked! 🎉</Text>
+                      )}
+                    </View>
+                  );
+                })}
+
+                {/* Daily Completion Achievement */}
+                {dailyProgress.allMissionsComplete && (
+                  <View style={[styles.achievementCard, styles.achievementAchieved]}>
+                    <View style={styles.achievementBadge}>
+                      <Ionicons name="checkmark-circle" size={32} color="#4CAF50" />
+                    </View>
+                    <Text style={[styles.achievementName, styles.achievementNameAchieved]}>
+                      Daily Complete
+                    </Text>
+                    <Text style={styles.achievementDate}>Today! ✅</Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* ───── Prayer and Care Circle - Instagram Style ───── */}
+          {prayerStories && prayerStories.length > 0 && (
             <LinearGradient
               colors={['rgba(123, 77, 98, 0.1)', 'rgba(206, 112, 63, 0.1)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.glassBackground}
+              style={styles.storiesGlassBackground}
             >
-              <View style={styles.glassCard}>
-                <Text style={styles.welcomeText}>
-                  {getGreeting()}, {userData?.name?.split(' ')[0] || 'Friend'}! 👋
-                </Text>
-                <Text style={styles.welcomeSubtext}>
-                  Ready for your spiritual journey today?
-                </Text>
-              </View>
-            </LinearGradient>
-          </Animated.View>
-        </View>
+              <View style={styles.storiesGlassCard}>
+                <View style={styles.storiesHeader}>
+                  <Text style={styles.storiesTitle}>Prayer and Care Circle</Text>
+                  <TouchableOpacity onPress={() => router.push('/(tabs)/prayer')}>
+                    <Text style={styles.storiesViewAll}>View All</Text>
+                  </TouchableOpacity>
+                </View>
 
-        {/* ───── Body ───── */}
-        <View style={styles.cardsContainer}>
-          {/* ───── Streak & Progress Header ───── */}
-          {!loadingStats && (
-            <View style={styles.gamificationHeader}>
-                  <LinearGradient
-                colors={['#2C1B47', '#5B3A7D', '#8B5A9E']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                style={styles.streakCard}
-                  >
-                {/* Top Stats Row */}
-                <View style={styles.topStatsRow}>
-                  <View style={styles.streakBadge}>
-                    <Ionicons name="flame" size={24} color="#FF6B35" />
-                    <View>
-                      <Text style={styles.streakNumber}>{enhancedStreakData?.currentStreak || 0}</Text>
-                      <Text style={styles.streakDaysLabel}>Day Streak</Text>
-                </View>
-                </View>
-                  
-                  <View style={styles.levelBadgeNew}>
-                    <Ionicons name="star" size={20} color="#FFD700" />
-                    <View>
-                      <Text style={styles.levelNumberNew}>Level {enhancedStreakData?.level || 1}</Text>
-                      <Text style={styles.levelLabelNew}>Rank</Text>
-                    </View>
-                </View>
-              </View>
-
-                {/* Level Progress Bar */}
-                {enhancedStreakData?.xpToNextLevel ? (
-                  <View style={styles.levelProgressContainer}>
-                    <View style={styles.levelProgressHeader}>
-                      <Text style={styles.levelProgressTitle}>Level Progress</Text>
-                      <Text style={styles.levelProgressXP}>
-                        {enhancedStreakData.totalXP || 0} / {(enhancedStreakData.totalXP || 0) + (enhancedStreakData.xpToNextLevel || 0)} XP
-                  </Text>
-                </View>
-                    <View style={styles.levelProgressBarBg}>
-                      <LinearGradient
-                        colors={['#FFD700', '#FFA500']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[
-                          styles.levelProgressBarFill, 
-                        { width: `${Math.min(100, ((enhancedStreakData.totalXP || 0) / ((enhancedStreakData.totalXP || 0) + (enhancedStreakData.xpToNextLevel || 1))) * 100)}%` }
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.levelProgressDetail}>
-                      {enhancedStreakData.xpToNextLevel} XP to Level {(enhancedStreakData.level || 1) + 1}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.levelProgressContainer}>
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', fontSize: 12 }}>
-                      Loading progress...
-                    </Text>
-            </View>
-          )}
-
-                {/* Bottom Stats Grid */}
-                <View style={styles.bottomStatsGrid}>
-                  <View style={styles.statItem}>
-                    <Ionicons name="trophy" size={18} color="#FFD700" />
-                    <Text style={styles.statValue}>{enhancedStreakData?.longestStreak || 0}</Text>
-                    <Text style={styles.statLabel}>Best Streak</Text>
-              </View>
-                  
-                  <View style={styles.statDivider} />
-                  
-                  <View style={styles.statItem}>
-                    <Ionicons name="time" size={18} color="#A78BFA" />
-                    <Text style={styles.statValue}>{formatTime(todayUsage?.seconds || 0)}</Text>
-                    <Text style={styles.statLabel}>Today</Text>
-                </View>
-              
-                  <View style={styles.statDivider} />
-                  
-                  <View style={styles.statItem}>
-                    <Ionicons name="calendar" size={18} color="#60A5FA" />
-                    <Text style={styles.statValue}>{enhancedStreakData?.totalActiveDays || 0}</Text>
-                    <Text style={styles.statLabel}>Total Days</Text>
-                </View>
-                  </View>
-              </LinearGradient>
-                  </View>
-          )}
-
-          {/* ───── Daily Missions (Cards) ───── */}
-          <View style={styles.missionsHeader}>
-            <Ionicons name="clipboard" size={20} color={PRIMARY_COLOR} />
-            <Text style={styles.missionsTitle}>Today's Spiritual Missions</Text>
-              </View>
-              
-
-          {getCardsData().map((item, index) => {
-            const expanded = selectedCard === item.id;
-            const missionNumber = index + 1;
-            
-            // Check if mission is complete from backend
-            let missionComplete = false;
-            if (dailyProgress.goals && dailyProgress.goals.length > 0) {
-              const goalType = item.id === '1' ? 'daily_verse' : 
-                              item.id === '2' ? 'daily_prayer' : 
-                              'daily_reflection';
-              const goal = dailyProgress.goals.find((g: any) => g.type === goalType);
-              missionComplete = goal?.completed || false;
-            }
-            
-            return (
-              <TouchableOpacity key={item.id} onPress={() => toggleCard(item.id)} activeOpacity={0.9}>
-                <LinearGradient
-                  colors={[PRIMARY_COLOR, SECONDARY_COLOR]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                  style={[
-                    styles.cardBase,
-                    expanded ? styles.cardExpanded : styles.cardCollapsed,
-                  ]}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.storiesScrollContainer}
                 >
-                  {/* Mission Badge */}
-                  <View style={styles.missionBadge}>
-                    <Text style={styles.missionNumber}>Mission {missionNumber}</Text>
-                    {missionComplete && (
-                      <View style={styles.completeBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                        <Text style={styles.completeText}>Completed</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Card header with chevron */}
-                  <View style={styles.cardHeader}>
-                    <View style={styles.cardTitleRow}>
-                      <Ionicons 
-                        name={
-                          item.id === '1' ? 'book' : 
-                          item.id === '2' ? 'heart' : 
-                          'bulb'
-                        } 
-                        size={22} 
-                        color={WHITE} 
-                      />
-                    <Text style={styles.cardTitle}>{item.title}</Text>
-                    </View>
-                    <Ionicons
-                      name={expanded ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={WHITE}
-                    />
-                  </View>
-
-                  {expanded && (
-                    <>
-                      <Text style={styles.cardDesc}>{item.description}</Text>
-                      <Text style={styles.cardContent}>{item.content}</Text>
-                      <View style={styles.actionRow}>
-                        <TouchableOpacity 
-                          style={styles.actionButton}
-                          onPress={() => handleRead(item.title)}
-                        >
-                          <Ionicons name="book" size={16} color={PRIMARY_COLOR} />
-                          <Text style={styles.actionText}>Read</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[
-                            styles.actionButton,
-                            currentText === item.content && isPlaying && styles.actionButtonActive
-                          ]}
-                          onPress={() => {
-                            if (currentText === item.content && (isPlaying || isPaused)) {
-                              handleTTSToggle();
-                            } else {
-                              handleListen(item.title);
-                            }
-                          }}
-                        >
-                          <Ionicons 
-                            name={
-                              currentText === item.content && isPlaying 
-                                ? (isPaused ? 'play' : 'pause') 
-                                : 'headset'
-                            } 
-                            size={16} 
-                            color={PRIMARY_COLOR} 
-                          />
-                          <Text style={styles.actionText}>
-                            {currentText === item.content && isPlaying 
-                              ? (isPaused ? 'Play' : 'Pause') 
-                              : 'Listen'
-                            }
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* ───── Achievements & Milestones ───── */}
-        {enhancedStreakData && enhancedStreakData.currentStreak >= 3 && (
-          <View style={styles.achievementsSection}>
-            <View style={styles.achievementsHeader}>
-              <Ionicons name="trophy" size={20} color="#FFD700" />
-              <Text style={styles.achievementsTitle}>Your Achievements</Text>
-            </View>
-            
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.achievementsScroll}
-            >
-              {/* Streak Milestones */}
-              {[3, 7, 14, 30, 60, 100].map((days) => {
-                const achieved = (enhancedStreakData.longestStreak || 0) >= days;
-                return (
-                  <View 
-                    key={days}
-                    style={[
-                      styles.achievementCard,
-                      achieved ? styles.achievementAchieved : styles.achievementLocked
-                    ]}
-                  >
-                    <View style={styles.achievementBadge}>
-                      <Ionicons 
-                        name={achieved ? "medal" : "lock-closed"} 
-                        size={32} 
-                        color={achieved ? "#FFD700" : "#999"} 
-                      />
-                    </View>
-                    <Text style={[
-                      styles.achievementName,
-                      achieved && styles.achievementNameAchieved
-                    ]}>
-                      {days} Day Streak
-                    </Text>
-                    {achieved && (
-                      <Text style={styles.achievementDate}>Unlocked! 🎉</Text>
-                    )}
-                  </View>
-                );
-              })}
-              
-              {/* Daily Completion Achievement */}
-              {dailyProgress.allMissionsComplete && (
-                <View style={[styles.achievementCard, styles.achievementAchieved]}>
-                  <View style={styles.achievementBadge}>
-                    <Ionicons name="checkmark-circle" size={32} color="#4CAF50" />
-                  </View>
-                  <Text style={[styles.achievementName, styles.achievementNameAchieved]}>
-                    Daily Complete
-                  </Text>
-                  <Text style={styles.achievementDate}>Today! ✅</Text>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ───── Prayer and Care Circle - Instagram Style ───── */}
-        {prayerStories.length > 0 && (
-          <LinearGradient
-            colors={['rgba(123, 77, 98, 0.1)', 'rgba(206, 112, 63, 0.1)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.storiesGlassBackground}
-          >
-            <View style={styles.storiesGlassCard}>
-              <View style={styles.storiesHeader}>
-                <Text style={styles.storiesTitle}>Prayer and Care Circle</Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/prayer')}>
-                  <Text style={styles.storiesViewAll}>View All</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.storiesScrollContainer}
-              >
-                {prayerStories.map((story, index) => (
-                  <TouchableOpacity 
-                    key={story.id} 
-                    style={styles.storyCircle}
-                    activeOpacity={0.8}
-                    onPress={() => openStoryViewer(story, index)}
-                  >
-                    <View style={styles.storyRing}>
-                      <View style={styles.storyAvatarContainer}>
-                        {story.userPicture ? (
-                          <Image 
-                            source={{ uri: story.userPicture }} 
-                            style={styles.storyAvatar}
-                          />
-                        ) : (
-                        <View style={styles.storyAvatarPlaceholder}>
-                          <Ionicons name="person" size={20} color={WHITE} />
+                  {prayerStories.map((story, index) => (
+                    <TouchableOpacity
+                      key={story.id}
+                      style={styles.storyCircle}
+                      activeOpacity={0.8}
+                      onPress={() => openStoryViewer(story, index)}
+                    >
+                      <View style={styles.storyRing}>
+                        <View style={styles.storyAvatarContainer}>
+                          {story.userPicture ? (
+                            <Image
+                              source={{ uri: story.userPicture }}
+                              style={styles.storyAvatar}
+                            />
+                          ) : (
+                            <View style={styles.storyAvatarPlaceholder}>
+                              <Ionicons name="person" size={20} color={WHITE} />
+                            </View>
+                          )}
                         </View>
+                        {/* Multiple stories indicator */}
+                        {story.stories && story.stories.length > 1 && (
+                          <View style={styles.multipleStoriesBadge}>
+                            <Text style={styles.multipleStoriesText}>{story.stories.length}</Text>
+                          </View>
                         )}
                       </View>
-                      {/* Multiple stories indicator */}
-                      {story.stories && story.stories.length > 1 && (
-                        <View style={styles.multipleStoriesBadge}>
-                          <Text style={styles.multipleStoriesText}>{story.stories.length}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.storyUserName} numberOfLines={1}>
-                      {story.isAnonymous ? 'Anonymous' : story.userName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </LinearGradient>
-        )}
+                      <Text style={styles.storyUserName} numberOfLines={1}>
+                        {story.isAnonymous ? 'Anonymous' : story.userName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </LinearGradient>
+          )}
         </View>
       </ScrollView>
 
       {/* Custom Read Modal */}
-      {showReadModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.readModalContent}>
-            <LinearGradient
-              colors={[PRIMARY_COLOR, SECONDARY_COLOR]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.readModalGradient}
-            >
-              <View style={styles.readModalHeader}>
-                <Text style={styles.readModalTitle}>{currentReadTitle}</Text>
-                <TouchableOpacity onPress={() => setShowReadModal(false)}>
-                  <Ionicons name="close" size={24} color={WHITE} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.readModalText}>{currentReadContent}</Text>
-            </LinearGradient>
-          </View>
-        </View>
-      )}
+      <ReadModal
+        visible={showReadModal}
+        title={currentReadTitle}
+        content={currentReadContent}
+        onClose={() => setShowReadModal(false)}
+      />
 
       {/* TTS Modal */}
-      {showTTSModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.ttsModalContent}>
-            <LinearGradient
-              colors={[PRIMARY_COLOR, SECONDARY_COLOR]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.ttsModalGradient}
-            >
-              <View style={styles.ttsModalHeader}>
-                <View style={styles.ttsTitleContainer}>
-                  <Ionicons name="headset" size={24} color={WHITE} style={{ marginRight: 8 }} />
-                  <Text style={styles.ttsModalTitle}>{currentTTSTitle}</Text>
-                </View>
-                <TouchableOpacity onPress={handleTTSClose}>
-                  <Ionicons name="close" size={24} color={WHITE} />
-                </TouchableOpacity>
-              </View>
+      <TTSModal
+        visible={showTTSModal}
+        title={currentTTSTitle}
+        content={currentTTSContent}
+        onClose={handleTTSClose}
+        isPlaying={isPlaying}
+        isPaused={isPaused}
+        progress={progress}
+        onTogglePlayPause={handleTTSToggle}
+        onStop={handleTTSStop}
+      />
 
-              {/* Progress Bar */}
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
-                  <View 
-                    style={[
-                      styles.progressFill, 
-                      { width: `${progress}%` }
-                    ]} 
-                  />
-                </View>
-                <Text style={styles.progressText}>{Math.round(progress)}%</Text>
-              </View>
-
-              {/* TTS Controls */}
-              <View style={styles.ttsControls}>
-                <TouchableOpacity 
-                  style={styles.ttsControlButton}
-                  onPress={handleTTSToggle}
-                >
-                  <Ionicons 
-                    name={isPlaying ? (isPaused ? 'play' : 'pause') : 'play'} 
-                    size={32} 
-                    color={WHITE} 
-                  />
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.ttsControlButton, styles.ttsStopButton]}
-                  onPress={handleTTSStop}
-                >
-                  <Ionicons name="stop" size={24} color={WHITE} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Status Text */}
-              <Text style={styles.ttsStatusText}>
-                {isPlaying ? (isPaused ? 'Paused - Click to resume' : 'Playing...') : 'Ready to play'}
-              </Text>
-
-              {/* Content Preview */}
-              <View style={styles.ttsContentPreview}>
-                <Text style={styles.ttsContentText} numberOfLines={3}>
-                  {currentTTSContent}
-                </Text>
-              </View>
-            </LinearGradient>
-          </View>
-        </View>
-      )}
-
-      {/* Voice Selector Modal */}
-      {showVoiceSelector && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.voiceModalContent}>
-            <LinearGradient
-              colors={[PRIMARY_COLOR, SECONDARY_COLOR]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.voiceModalGradient}
-            >
-              <View style={styles.voiceModalHeader}>
-                <Text style={styles.voiceModalTitle}>Select Voice</Text>
-                <TouchableOpacity onPress={() => setShowVoiceSelector(false)}>
-                  <Ionicons name="close" size={24} color={WHITE} />
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView style={styles.voiceList} showsVerticalScrollIndicator={false}>
-                {/* Default Voice Option */}
-                <TouchableOpacity 
-                  style={[
-                    styles.voiceOption,
-                    !selectedVoice && styles.voiceOptionSelected
-                  ]}
-                  onPress={() => handleVoiceSelect('')}
-                >
-                  <View style={styles.voiceOptionContent}>
-                    <Ionicons name="volume-high" size={20} color={WHITE} />
-                    <Text style={styles.voiceOptionName}>Default Voice</Text>
-                  </View>
-                  {!selectedVoice && (
-                    <Ionicons name="checkmark" size={20} color={WHITE} />
-                  )}
-                </TouchableOpacity>
-
-                {/* Available Voices */}
-                {availableVoices.map((voice) => (
-                  <TouchableOpacity 
-                    key={voice.identifier}
-                    style={[
-                      styles.voiceOption,
-                      selectedVoice === voice.identifier && styles.voiceOptionSelected
-                    ]}
-                    onPress={() => handleVoiceSelect(voice.identifier)}
-                  >
-                    <View style={styles.voiceOptionContent}>
-                      <Ionicons name="person" size={20} color={WHITE} />
-                      <View style={styles.voiceInfo}>
-                        <Text style={styles.voiceOptionName}>
-                          {voice.name || 'Unknown Voice'}
-                        </Text>
-                        <Text style={styles.voiceOptionDetails}>
-                          {`${voice.language || 'Unknown'}${voice.quality ? ` • ${voice.quality}` : ''}`}
-                        </Text>
-                      </View>
-                    </View>
-                    {selectedVoice === voice.identifier && (
-                      <Ionicons name="checkmark" size={20} color={WHITE} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </LinearGradient>
-          </View>
-        </View>
-      )}
+      {/* View More Modal */}
+      <ViewMoreModal
+        visible={showViewMoreModal}
+        title={viewMoreTitle}
+        content={viewMoreContent}
+        onClose={() => setShowViewMoreModal(false)}
+      />
 
       {/* Story Viewer Modal */}
       {showStoryViewer && selectedStory && (
-        <View style={styles.storyModalOverlay}>
-          <View style={styles.storyModalContainer}>
-            {/* Story Header */}
-            <View style={styles.storyHeader}>
-              <View style={styles.storyUserInfo}>
-                <View style={styles.storyUserAvatar}>
-                  {selectedStory.userPicture ? (
-                    <Image 
-                      source={{ uri: selectedStory.userPicture }} 
-                      style={styles.storyUserAvatarImage}
-                    />
-                  ) : (
-                    <View style={styles.storyUserAvatarPlaceholder}>
-                      <Ionicons name="person" size={24} color={WHITE} />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.storyUserDetails}>
-                  <Text style={styles.storyModalUserName}>{selectedStory.userName}</Text>
-                  <Text style={styles.storyTime}>
-                    {new Date(selectedStory.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={closeStoryViewer} style={styles.storyCloseButton}>
-                <Ionicons name="close" size={24} color={WHITE} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Story Content */}
-            <ScrollView style={styles.storyContent} showsVerticalScrollIndicator={false}>
-              {/* Prayer Card */}
-              <View style={styles.prayerStoryCard}>
-                {/* Card Header */}
-                <View style={styles.prayerCardHeader}>
-                  {/* Meta Badges */}
-                  <View style={styles.prayerCardMeta}>
-                    {selectedStory?.isUrgent && (
-                      <View style={styles.prayerCardUrgentBadge}>
-                        <Ionicons name="flash" size={12} color={WHITE} />
-                        <Text style={styles.prayerCardUrgentText}>Urgent</Text>
-                      </View>
-                    )}
-                    {selectedStory?.category && (
-                      <View style={styles.prayerCardCategoryBadge}>
-                        <Ionicons name={getCategoryIcon(selectedStory.category) as any} size={12} color={WHITE} />
-                        <Text style={styles.prayerCardCategoryText}>{selectedStory.category}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* Prayer Content */}
-                <View style={styles.prayerCardContent}>
-                  <Text style={styles.prayerCardTitle}>{selectedStory?.title || 'No Title'}</Text>
-                  <Text 
-                    style={styles.prayerCardDescription}
-                    numberOfLines={shouldShowViewMore(selectedStory?.description || '') ? 6 : undefined}
-                    ellipsizeMode="tail"
-                  >
-                    {selectedStory?.description || 'No Description'}
-                  </Text>
-                  {shouldShowViewMore(selectedStory?.description || '') && (
-                    <TouchableOpacity 
-                      style={styles.viewMoreButton}
-                      onPress={() => openViewMore(selectedStory.title, selectedStory.description)}
-                    >
-                      <Text style={styles.viewMoreText}>View More</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Reply Action */}
-                <View style={styles.prayerCardActions}>
-                  <TouchableOpacity 
-                    style={styles.prayerCardReplyButton}
-                    onPress={() => {
-                      closeStoryViewer();
-                      router.push(`/(tabs)/prayer?postId=${selectedStory?.id}&autoOpenModal=true`);
-                    }}
-                  >
-                    <Ionicons name="chatbubbles-outline" size={16} color={WHITE} />
-                    <Text style={styles.prayerCardReplyText}>Reply</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </ScrollView>
-
-            {/* Navigation Controls - Floating */}
-            <View style={styles.storyNavigationFloating}>
-              <TouchableOpacity 
-                onPress={goToPreviousStory}
-                style={[styles.storyNavButtonFloating, (() => {
-                  const currentGroup = prayerStories[currentStoryIndex];
-                  const currentStoryInGroup = selectedStory;
-                  
-                  // Check if we're at the first story in the first group
-                  if (currentStoryIndex === 0) {
-                    if (currentGroup?.stories && currentGroup.stories.length > 1) {
-                      const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
-                      return currentStoryIndexInGroup === 0;
-                    }
-                    return true; // First group, first story
-                  }
-                  return false;
-                })() && styles.storyNavButtonFloatingDisabled]}
-                disabled={(() => {
-                  const currentGroup = prayerStories[currentStoryIndex];
-                  const currentStoryInGroup = selectedStory;
-                  
-                  // Check if we're at the first story in the first group
-                  if (currentStoryIndex === 0) {
-                    if (currentGroup?.stories && currentGroup.stories.length > 1) {
-                      const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
-                      return currentStoryIndexInGroup === 0;
-                    }
-                    return true; // First group, first story
-                  }
-                  return false;
-                })()}
-              >
-                <Ionicons name="chevron-back" size={18} color={WHITE} />
-              </TouchableOpacity>
-              
-              <View style={styles.storyProgressFloating}>
-                <Text style={styles.storyProgressFloatingText}>
-                  {(() => {
-                    const currentGroup = prayerStories[currentStoryIndex];
-                    const currentStoryInGroup = selectedStory;
-                    let currentStoryIndexInGroup = 0;
-                    let totalStoriesInGroup = 1;
-                    
-                    if (currentGroup?.stories && currentGroup.stories.length > 1) {
-                      currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
-                      totalStoriesInGroup = currentGroup.stories.length;
-                    }
-                    
-                    return `${currentStoryIndexInGroup + 1}/${totalStoriesInGroup}`;
-                  })()}
-                </Text>
-              </View>
-              
-              <TouchableOpacity 
-                onPress={goToNextStory}
-                style={[styles.storyNavButtonFloating, (() => {
-                  const currentGroup = prayerStories[currentStoryIndex];
-                  const currentStoryInGroup = selectedStory;
-                  
-                  // Check if we're at the last story in the last group
-                  if (currentStoryIndex === prayerStories.length - 1) {
-                    if (currentGroup?.stories && currentGroup.stories.length > 1) {
-                      const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
-                      return currentStoryIndexInGroup === currentGroup.stories.length - 1;
-                    }
-                    return true; // Last group, last story
-                  }
-                  return false;
-                })() && styles.storyNavButtonFloatingDisabled]}
-                disabled={(() => {
-                  const currentGroup = prayerStories[currentStoryIndex];
-                  const currentStoryInGroup = selectedStory;
-                  
-                  // Check if we're at the last story in the last group
-                  if (currentStoryIndex === prayerStories.length - 1) {
-                    if (currentGroup?.stories && currentGroup.stories.length > 1) {
-                      const currentStoryIndexInGroup = currentGroup.stories.findIndex((s: any) => s.id === currentStoryInGroup?.id);
-                      return currentStoryIndexInGroup === currentGroup.stories.length - 1;
-                    }
-                    return true; // Last group, last story
-                  }
-                  return false;
-                })()}
-              >
-                <Ionicons name="chevron-forward" size={18} color={WHITE} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* View More Modal */}
-      {showViewMoreModal && (
-        <View style={styles.viewMoreModalOverlay}>
-          <View style={styles.viewMoreModalContainer}>
-            <View style={styles.viewMoreModalHeader}>
-              <Text style={styles.viewMoreModalTitle}>{viewMoreTitle}</Text>
-              <TouchableOpacity onPress={closeViewMore} style={styles.viewMoreCloseButton}>
-                <Ionicons name="close" size={24} color={WHITE} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.viewMoreModalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.viewMoreModalText}>{viewMoreContent}</Text>
-            </ScrollView>
-          </View>
-        </View>
+        <ReadModal
+          visible={showStoryViewer}
+          title={selectedStory.isAnonymous ? 'Anonymous Prayer Story' : `${selectedStory.userName}'s Prayer Story`}
+          content={selectedStory.content}
+          onClose={closeStoryViewer}
+        />
       )}
     </SafeAreaView>
   );
@@ -2212,14 +1756,14 @@ Take a moment to think about three things you're grateful for today. It could be
 
 /* ───────────────────────── Styles ───────────────────────── */
 const styles = StyleSheet.create({
-  safeArea: { 
-    flex: 1, 
+  safeArea: {
+    flex: 1,
     backgroundColor: '#f5f7fa'  // Subtle background for glassmorphism
   },
   container: {
-    flex: 1, 
+    flex: 1,
     backgroundColor: 'transparent',
-    paddingHorizontal: 24, 
+    paddingHorizontal: 24,
     paddingTop: STATUS_BAR_OFFSET,
   },
   scrollContainer: {
@@ -2227,15 +1771,15 @@ const styles = StyleSheet.create({
   },
   scrollContentContainer: {
     flexGrow: 1,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   cardsContainer: {
-    paddingBottom: 40,
+    // paddingBottom removed to fix gap between cards and next section
   },
 
   /* Top Bar */
   topBar: {
-    flexDirection: 'row', 
+    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 32,
     paddingLeft: 0,
@@ -2243,11 +1787,11 @@ const styles = StyleSheet.create({
   },
 
   /* Body content */
-  contentContainer: { paddingBottom: 40 },
+  contentContainer: { paddingBottom: 120 },
 
   /* Cards - Glassmorphism Design */
   cardBase: {
-    borderRadius: 24, 
+    borderRadius: 24,
     marginBottom: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.7)',  // Semi-transparent white
     backdropFilter: 'blur(20px)',
@@ -2260,14 +1804,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.5)',  // Subtle white border
     overflow: 'hidden',
   },
-  cardCollapsed: { 
-    paddingVertical: 16, 
-    paddingHorizontal: 20 
+  cardCollapsed: {
+    paddingVertical: 16,
+    paddingHorizontal: 20
   },
-  cardExpanded:  { 
-    padding: 22 
+  cardExpanded: {
+    padding: 22
   },
-  
+
   // Gamification Styles
   gamificationHeader: {
     marginBottom: 24,
@@ -2629,7 +2173,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '500',
   },
-  
+
   // Achievements
   achievementsSection: {
     marginTop: 8,
@@ -2685,7 +2229,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontFamily: 'serif',
   },
-  
+
   missionBadge: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2737,8 +2281,8 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   cardHeader: {
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
   },
@@ -2749,9 +2293,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    color: WHITE, 
-    fontSize: 19, 
-    fontWeight: '700', 
+    color: WHITE,
+    fontSize: 19,
+    fontWeight: '700',
     fontFamily: 'serif',
     letterSpacing: 0.4,
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
@@ -2759,9 +2303,9 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   cardDesc: {
-    marginVertical: 16, 
+    marginVertical: 16,
     color: 'rgba(255,255,255,0.95)',
-    fontSize: 15, 
+    fontSize: 15,
     fontFamily: 'serif',
     lineHeight: 23,
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
@@ -2769,27 +2313,27 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   cardContent: {
-    marginVertical: 18, 
+    marginVertical: 18,
     color: WHITE,
-    fontSize: 15, 
+    fontSize: 15,
     fontFamily: 'serif',
     lineHeight: 25,
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  actionRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-evenly', 
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
     marginTop: 18,
     gap: 14,
   },
   actionButton: {
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',  // Glassmorphic button
-    paddingVertical: 13, 
-    paddingHorizontal: 26, 
+    paddingVertical: 13,
+    paddingHorizontal: 26,
     borderRadius: 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -2800,10 +2344,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   actionText: {
-    color: PRIMARY_COLOR, 
-    marginLeft: 8, 
+    color: PRIMARY_COLOR,
+    marginLeft: 8,
     fontWeight: '700',
-    fontFamily: 'serif', 
+    fontFamily: 'serif',
     fontSize: 15,
   },
   actionButtonActive: {
@@ -2837,8 +2381,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   readModalHeader: {
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
@@ -2868,8 +2412,8 @@ const styles = StyleSheet.create({
     padding: 26,
   },
   ttsModalHeader: {
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
   },
@@ -2879,9 +2423,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   ttsModalTitle: {
-    color: WHITE, 
-    fontSize: 21, 
-    fontWeight: '700', 
+    color: WHITE,
+    fontSize: 21,
+    fontWeight: '700',
     fontFamily: 'serif',
     flex: 1,
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
@@ -3082,7 +2626,7 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     marginTop: 2,
   },
-  
+
   // Stats Dashboard Styles - Minimal
   statsContainer: {
     marginBottom: 16,
@@ -3140,7 +2684,7 @@ const styles = StyleSheet.create({
     color: DARK_GRAY,
     marginLeft: 4,
   },
-  
+
   // Daily Flow Timeframes Styles
   timeframesContainer: {
     marginBottom: 15,
@@ -3218,7 +2762,7 @@ const styles = StyleSheet.create({
     color: WHITE,
     textAlign: 'center',
   },
-  
+
   // Profile Icon Container
   profileIconContainer: {
     marginLeft: 0,
@@ -3241,7 +2785,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
+
   // Welcome Message Styles
   welcomeContainer: {
     flex: 1,
@@ -3279,7 +2823,7 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     fontStyle: 'italic',
   },
-  
+
   // Prayer and Care Circle - Instagram Style
   storiesContainer: {
     marginBottom: 20,
@@ -3397,7 +2941,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: WHITE,
   },
-  
+
   // Story Viewer Modal
   storyModalOverlay: {
     position: 'absolute',
@@ -3415,7 +2959,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 100,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   storyHeader: {
     position: 'absolute',
@@ -3478,7 +3022,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  
+
   // Prayer Story Card
   prayerStoryCard: {
     width: '100%',
@@ -3779,7 +3323,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
     backgroundColor: 'transparent',
     zIndex: 10,
   },
@@ -3809,7 +3353,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 15,
   },
-  
+
   // Floating Navigation Styles
   storyNavigationFloating: {
     position: 'absolute',
@@ -3856,7 +3400,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  
+
   // View More Modal Styles
   viewMoreButton: {
     marginTop: 8,
@@ -3923,6 +3467,6 @@ const styles = StyleSheet.create({
     color: WHITE,
     lineHeight: 24,
   },
-  
+
 });
 

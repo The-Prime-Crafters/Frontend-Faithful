@@ -1,21 +1,23 @@
 import { API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
+import { UserData, defaultUserData } from '@/types/UserData';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 const PRIMARY_COLOR = '#7b4d62';
@@ -48,7 +50,7 @@ const AGE_GROUPS = [
 ];
 
 const DENOMINATIONS = [
-  'Catholic', 'Evangelical', 'Methodist', 'Adventist', 
+  'Catholic', 'Evangelical', 'Methodist', 'Adventist',
   'Lutheran', 'Presbyterian', 'Anglican', 'Other'
 ];
 
@@ -66,7 +68,7 @@ interface UserPreferences {
 export default function AccountSettings() {
   const router = useRouter();
   const { showLoading, hideLoading } = useLoading();
-  
+
   const [preferences, setPreferences] = useState<UserPreferences>({
     name: '',
     email: '',
@@ -100,8 +102,23 @@ export default function AccountSettings() {
   const loadAvailableVoices = async () => {
     try {
       const voices = await Speech.getAvailableVoicesAsync();
-      setAvailableVoices(voices);
-      console.log('✅ Loaded', voices.length, 'voices');
+      
+      // Filter to only American English (en-US) and Spanish (es-US or es-ES)
+      const filteredVoices = voices.filter(voice => 
+        voice.language === 'en-US' ||     // American English only
+        voice.language === 'es-US' ||     // Spanish (US)
+        voice.language === 'es-ES'        // Spanish (Spain)
+      );
+      
+      // Sort: American English first, then Spanish
+      const sortedVoices = filteredVoices.sort((a, b) => {
+        if (a.language === 'en-US' && b.language !== 'en-US') return -1;
+        if (a.language !== 'en-US' && b.language === 'en-US') return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      setAvailableVoices(sortedVoices);
+      console.log('✅ Loaded', sortedVoices.length, 'voices (American English and Spanish only)');
     } catch (error) {
       console.error('❌ Error loading voices:', error);
     }
@@ -111,12 +128,12 @@ export default function AccountSettings() {
     try {
       // Stop any currently playing preview
       await stopVoicePreview();
-      
+
       setPreviewingVoiceId(voice.identifier);
-      
+
       // Play a sample text with this voice
       const sampleText = "Hello, this is a preview of this voice reading the daily verse and prayer.";
-      
+
       await Speech.speak(sampleText, {
         voice: voice.identifier,
         rate: 0.8,
@@ -131,7 +148,7 @@ export default function AccountSettings() {
           setPreviewingVoiceId(null);
         }
       });
-      
+
       console.log('🔊 Playing voice preview:', voice.name);
     } catch (error) {
       console.error('❌ Error previewing voice:', error);
@@ -151,10 +168,10 @@ export default function AccountSettings() {
   const loadUserPreferences = async () => {
     try {
       showLoading('Loading preferences...');
-      
+
       const token = await SecureStore.getItemAsync('authToken');
       const userDataString = await SecureStore.getItemAsync('userData');
-      
+
       if (!token) {
         Alert.alert('Error', 'Please sign in again');
         hideLoading();
@@ -163,7 +180,7 @@ export default function AccountSettings() {
 
       // Load user data from secure store
       if (userDataString) {
-        const userData = JSON.parse(userDataString);
+        const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
         setPreferences(prev => ({
           ...prev,
           name: userData.name || '',
@@ -183,7 +200,7 @@ export default function AccountSettings() {
       if (profileResponse.ok) {
         const profileResult = await profileResponse.json();
         console.log('✅ Loaded profile:', profileResult);
-        
+
         if (profileResult.user) {
           const user = profileResult.user;
           setPreferences(prev => ({
@@ -211,7 +228,7 @@ export default function AccountSettings() {
       if (response.ok) {
         const result = await response.json();
         console.log('✅ Loaded preferences:', result);
-        
+
         if (result.data || result.preferences) {
           const prefs = result.data || result.preferences;
           setPreferences(prev => ({
@@ -231,7 +248,7 @@ export default function AccountSettings() {
   const savePreference = async (key: string, value: any) => {
     try {
       showLoading('Saving...');
-      
+
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
         Alert.alert('Error', 'Please sign in again');
@@ -251,15 +268,15 @@ export default function AccountSettings() {
       if (response.ok) {
         console.log(`✅ ${key} updated successfully`);
         Alert.alert('Success', 'Preference updated successfully');
-        
+
         // Update local state
         setPreferences(prev => ({ ...prev, [key]: value }));
-        
+
         // Update userData in secure store if it's name or email
         if (key === 'name' || key === 'email') {
           const userDataString = await SecureStore.getItemAsync('userData');
           if (userDataString) {
-            const userData = JSON.parse(userDataString);
+            const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
             userData[key] = value;
             await SecureStore.setItemAsync('userData', JSON.stringify(userData));
           }
@@ -284,7 +301,7 @@ export default function AccountSettings() {
   const saveBibleVersion = async (version: string) => {
     try {
       showLoading('Updating Bible version...');
-      
+
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
         Alert.alert('Error', 'Please sign in again');
@@ -305,10 +322,10 @@ export default function AccountSettings() {
 
       if (response.ok) {
         console.log('✅ Bible version updated successfully');
-        
+
         // Update local state
         setPreferences(prev => ({ ...prev, bibleVersion: version }));
-        
+
         // Also update USERS_PREFERENCES for consistency
         await fetch(API_ENDPOINTS.USERS_PREFERENCES, {
           method: 'PUT',
@@ -318,7 +335,7 @@ export default function AccountSettings() {
           },
           body: JSON.stringify({ bibleVersion: version }),
         });
-        
+
         // HARD REFRESH: Clear cached daily content
         await SecureStore.deleteItemAsync('dailyVerse');
         await SecureStore.deleteItemAsync('dailyPrayer');
@@ -326,24 +343,24 @@ export default function AccountSettings() {
         await SecureStore.deleteItemAsync('lastVerseFetch');
         await SecureStore.deleteItemAsync('lastPrayerFetch');
         await SecureStore.deleteItemAsync('lastReflectionFetch');
-        
+
         // Update cached user data with new Bible version for AI chat
         const userDataString = await SecureStore.getItemAsync('userData');
         if (userDataString) {
-          const userData = JSON.parse(userDataString);
+          const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
           userData.bibleVersion = version;
           await SecureStore.setItemAsync('userData', JSON.stringify(userData));
           console.log('✅ AI chat will now use:', version);
         }
-        
+
         // Set a flag to trigger home screen refresh
         await SecureStore.setItemAsync('bibleVersionChanged', 'true');
-        
+
         console.log('✅ Bible version updated:', version);
         console.log('✅ Cached data cleared, home screen will refresh');
-        
+
         Alert.alert(
-          'Success', 
+          'Success',
           `Bible version changed to ${version}. Your daily content will refresh automatically with the new version.`,
           [
             {
@@ -355,7 +372,7 @@ export default function AccountSettings() {
             }
           ]
         );
-        
+
       } else {
         const error = await response.json();
         throw new Error(error.message || 'Failed to update Bible version');
@@ -382,7 +399,7 @@ export default function AccountSettings() {
     // Save both voiceId and voiceName
     try {
       showLoading('Saving...');
-      
+
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
         Alert.alert('Error', 'Please sign in again');
@@ -396,7 +413,7 @@ export default function AccountSettings() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           voiceId: voice.identifier,
           voiceName: voice.name
         }),
@@ -405,18 +422,18 @@ export default function AccountSettings() {
       if (response.ok) {
         console.log('✅ Voice preference updated successfully');
         Alert.alert('Success', 'Voice preference updated successfully');
-        
+
         // Update local state
-        setPreferences(prev => ({ 
-          ...prev, 
+        setPreferences(prev => ({
+          ...prev,
           voiceId: voice.identifier,
           voiceName: voice.name
         }));
-        
+
         // Cache voice in SecureStore for faster TTS loading
         await SecureStore.setItemAsync('userVoiceId', voice.identifier);
         console.log('✅ Voice cached in SecureStore');
-        
+
         setShowVoiceModal(false);
       } else {
         const error = await response.json();
@@ -441,14 +458,14 @@ export default function AccountSettings() {
             activeOpacity={0.7}
           >
             <View style={styles.backIconContainer}>
-              <Ionicons 
-                name="arrow-back" 
-                size={24} 
-                color={PRIMARY_COLOR} 
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={PRIMARY_COLOR}
               />
             </View>
           </TouchableOpacity>
-          
+
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Account Settings</Text>
             <Text style={styles.headerSubtitle}>
@@ -460,7 +477,7 @@ export default function AccountSettings() {
         {/* Profile Information Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Profile Information</Text>
-          
+
           <View style={styles.settingCard}>
             <View style={styles.settingIconContainer}>
               <Ionicons name="person" size={24} color={PRIMARY_COLOR} />
@@ -485,8 +502,8 @@ export default function AccountSettings() {
         {/* Bible Preferences Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Bible Preferences</Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.settingCard}
             onPress={() => setShowBibleVersionModal(true)}
           >
@@ -504,8 +521,8 @@ export default function AccountSettings() {
         {/* Audio Preferences Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Audio Preferences</Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.settingCard}
             onPress={() => setShowVoiceModal(true)}
           >
@@ -525,8 +542,8 @@ export default function AccountSettings() {
         {/* Personal Information Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.settingCard}
             onPress={() => setShowAgeGroupModal(true)}
           >
@@ -540,7 +557,7 @@ export default function AccountSettings() {
             <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingCard}
             onPress={() => setShowDenominationModal(true)}
           >
@@ -573,7 +590,7 @@ export default function AccountSettings() {
                 <Ionicons name="close" size={24} color={DARK_GRAY} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.modalContent}>
               {BIBLE_VERSIONS.map((version) => (
                 <TouchableOpacity
@@ -622,7 +639,7 @@ export default function AccountSettings() {
                 <Ionicons name="close" size={24} color={DARK_GRAY} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.modalContent}>
               {AGE_GROUPS.map((age) => (
                 <TouchableOpacity
@@ -664,7 +681,7 @@ export default function AccountSettings() {
                 <Ionicons name="close" size={24} color={DARK_GRAY} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.modalContent}>
               {DENOMINATIONS.map((denomination) => (
                 <TouchableOpacity
@@ -706,12 +723,12 @@ export default function AccountSettings() {
                 <Ionicons name="close" size={24} color={DARK_GRAY} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.modalContent}>
               <Text style={styles.modalSubtitle}>
                 Select your preferred voice for read-aloud features
               </Text>
-              
+
               {availableVoices.map((voice) => (
                 <View
                   key={voice.identifier}
@@ -739,7 +756,7 @@ export default function AccountSettings() {
                       <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
                     )}
                   </TouchableOpacity>
-                  
+
                   {/* Preview Button */}
                   <TouchableOpacity
                     style={styles.previewButton}
@@ -751,15 +768,15 @@ export default function AccountSettings() {
                       }
                     }}
                   >
-                    <Ionicons 
-                      name={previewingVoiceId === voice.identifier ? "stop-circle" : "play-circle"} 
-                      size={28} 
-                      color={previewingVoiceId === voice.identifier ? SECONDARY_COLOR : PRIMARY_COLOR} 
+                    <Ionicons
+                      name={previewingVoiceId === voice.identifier ? "stop-circle" : "play-circle"}
+                      size={28}
+                      color={previewingVoiceId === voice.identifier ? SECONDARY_COLOR : PRIMARY_COLOR}
                     />
                   </TouchableOpacity>
                 </View>
               ))}
-              
+
               {availableVoices.length === 0 && (
                 <View style={styles.emptyVoices}>
                   <Ionicons name="volume-mute" size={48} color={SOFT_GRAY} />

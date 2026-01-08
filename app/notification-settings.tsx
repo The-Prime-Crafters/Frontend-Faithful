@@ -6,16 +6,16 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const PRIMARY_COLOR = '#7b4d62';
@@ -41,7 +41,7 @@ interface NotificationSettings {
 export default function NotificationSettings() {
   const router = useRouter();
   const { showLoading, hideLoading } = useLoading();
-  
+
   const [settings, setSettings] = useState<NotificationSettings>({
     pushEnabled: true,
     journeyReminders: true,
@@ -80,7 +80,7 @@ export default function NotificationSettings() {
       if (response.ok) {
         const result = await response.json();
         const userData = result.user || result.data || result;
-        
+
         if (userData.notificationSettings) {
           setSettings({
             ...settings,
@@ -97,7 +97,7 @@ export default function NotificationSettings() {
 
   const handleToggle = async (key: keyof NotificationSettings) => {
     const newValue = !settings[key];
-    
+
     // Optimistically update UI
     setSettings(prev => ({ ...prev, [key]: newValue }));
 
@@ -133,7 +133,7 @@ export default function NotificationSettings() {
 
       // Update local state
       const newSettings = { ...settings, [key]: newValue };
-      
+
       // Save to local storage (MOST IMPORTANT - this persists the toggle state)
       await SecureStore.setItemAsync('notificationSettings', JSON.stringify(newSettings));
       console.log(`✅ Notification setting saved locally: ${key} = ${newValue}`);
@@ -161,7 +161,7 @@ export default function NotificationSettings() {
         // Backend error is non-critical since notifications are scheduled locally
         console.log(`⚠️ Could not save to backend, but local notification is scheduled`);
       }
-      
+
       // If enabling push notifications for the first time, request permissions
       if (key === 'pushEnabled' && newValue) {
         const pushToken = await NotificationService.registerForPushNotifications();
@@ -220,14 +220,14 @@ export default function NotificationSettings() {
             activeOpacity={0.7}
           >
             <View style={styles.backIconContainer}>
-              <Ionicons 
-                name="arrow-back" 
-                size={24} 
-                color={PRIMARY_COLOR} 
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={PRIMARY_COLOR}
               />
             </View>
           </TouchableOpacity>
-          
+
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Notification Settings</Text>
             <Text style={styles.headerSubtitle}>
@@ -239,7 +239,7 @@ export default function NotificationSettings() {
         {/* Master Toggle */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Push Notifications</Text>
-          
+
           <View style={styles.settingCard}>
             <View style={styles.settingIconContainer}>
               <Ionicons name="notifications" size={24} color={PRIMARY_COLOR} />
@@ -265,7 +265,7 @@ export default function NotificationSettings() {
           <Text style={styles.sectionDescription}>
             These notifications are currently enabled and working
           </Text>
-          
+
           <View style={styles.settingCard}>
             <View style={styles.settingIconContainer}>
               <Ionicons name="book" size={24} color={PRIMARY_COLOR} />

@@ -46,17 +46,9 @@ export default function Index() {
         console.log('📝 Existing JWT token length:', token.length);
         console.log('🔍 Existing JWT token preview:', token.substring(0, 50) + '...');
         
-        // Check if user has completed profile setup
-        const profileStatus = await checkProfileCompletion();
-        console.log('📊 Profile completion status on startup:', profileStatus);
-        
-        if (profileStatus.isComplete) {
-          console.log('✅ Profile complete, redirecting to main app');
+        // User is already logged in, go to main app
+        console.log('✅ User authenticated, redirecting to main app');
           router.replace('/(tabs)');
-        } else {
-          console.log('⚠️ Profile incomplete, redirecting to onboarding');
-          router.replace('/(main)/testimonialscreen2');
-        }
       } else {
         console.log('❌ No existing token found on app startup, redirecting to onboarding');
         router.replace('/(main)/onboarding');

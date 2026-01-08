@@ -1,6 +1,8 @@
 import BackButton from '@/components/BackButton';
 import { API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
+import { UserData, defaultUserData } from '@/types/UserData';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -118,7 +120,7 @@ export default function BibleVersionScreen() {
     try {
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const userData = JSON.parse(userDataString);
+        const userData: UserData = safeJsonParse(userDataString, defaultUserData);
         // Get denomination from the last saved preferences
         const token = await SecureStore.getItemAsync('authToken');
         if (token) {
@@ -502,4 +504,4 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     fontWeight: '500',
   },
-}); 
+});
