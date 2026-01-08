@@ -4,17 +4,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
-    Linking,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Linking,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const PRIMARY_COLOR = '#7b4d62';
@@ -30,6 +30,62 @@ const LIGHT_ORANGE = '#f4e4d6';
 const STATUS_BAR_OFFSET = Platform.OS === 'android'
   ? (StatusBar.currentHeight ?? 24) + 10
   : 10;
+
+// Get user's timezone (prioritizes offset-based detection over system settings)
+const getUserTimezone = (): string => {
+  try {
+    // First, get the timezone offset (more reliable than system settings)
+    const offset = -new Date().getTimezoneOffset(); // Minutes (positive for east of UTC)
+    
+    // For Pakistan (UTC+5 = -300 minutes), always use Asia/Karachi
+    if (offset === -300) {
+      return 'Asia/Karachi';
+    }
+    
+    // Common timezone mappings based on offset
+    const OFFSET_MAP: Record<number, string> = {
+      '-720': 'Pacific/Auckland',      // UTC+12
+      '-660': 'Pacific/Noumea',        // UTC+11
+      '-600': 'Australia/Sydney',      // UTC+10
+      '-540': 'Asia/Tokyo',            // UTC+9
+      '-480': 'Asia/Singapore',        // UTC+8
+      '-420': 'Asia/Bangkok',          // UTC+7
+      '-360': 'Asia/Dhaka',            // UTC+6
+      '-300': 'Asia/Karachi',          // UTC+5 (Pakistan)
+      '-270': 'Asia/Kabul',            // UTC+4:30
+      '-240': 'Asia/Dubai',            // UTC+4
+      '-180': 'Europe/Moscow',         // UTC+3
+      '-120': 'Europe/Athens',         // UTC+2
+      '-60': 'Europe/Paris',           // UTC+1
+      '0': 'Europe/London',            // UTC+0
+      '300': 'America/Chicago',        // UTC-5
+      '360': 'America/Denver',         // UTC-6
+      '420': 'America/Los_Angeles',    // UTC-7
+    };
+    
+    const offsetBasedTimezone = OFFSET_MAP[offset];
+    if (offsetBasedTimezone) {
+      return offsetBasedTimezone;
+    }
+    
+    // Try Intl API as fallback
+    if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+      try {
+        const intlTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (intlTimezone && intlTimezone !== 'UTC') {
+          return intlTimezone;
+        }
+      } catch (intlError) {
+        console.log('Intl API not available');
+      }
+    }
+    
+    return 'UTC';
+  } catch (error) {
+    console.error('Error getting timezone:', error);
+    return 'UTC';
+  }
+};
 
 // Types
 interface StudyGroup {
@@ -239,6 +295,10 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
       const day = String(selectedDate.getDate()).padStart(2, '0');
       const dateString = `${year}-${month}-${day}`;
       
+      // Get user's timezone
+      const userTimezone = getUserTimezone();
+      console.log('🌍 User timezone:', userTimezone);
+      
       console.log('🔄 Fetching study groups for date:', dateString);
       console.log('📅 Selected date object:', selectedDate);
       console.log('📅 Manual date construction:', `${year}-${month}-${day}`);
@@ -250,6 +310,7 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'x-timezone': userTimezone,
         },
       });
       
@@ -278,6 +339,7 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'x-timezone': userTimezone,
         },
       });
 
@@ -419,11 +481,15 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
 
       console.log('📤 Request Body:', JSON.stringify(requestBody, null, 2));
 
+      const userTimezone = getUserTimezone();
+      console.log('🌍 User timezone:', userTimezone);
+
       const response = await fetch(API_ENDPOINTS.getStudyGroupRequestJoin(selectedGroupId), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'x-timezone': userTimezone,
         },
         body: JSON.stringify(requestBody),
       });
@@ -459,23 +525,37 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
   const handleJoinConference = async (group: StudyGroup) => {
     try {
       console.log('🎥 Joining conference for group:', group.id);
+      console.log('🔗 Meet link:', group.meetLink);
 
       if (group.meetLink) {
-        // Join Google Meet
-        console.log('🎥 Opening Google Meet:', group.meetLink);
-        const supported = await Linking.canOpenURL(group.meetLink);
-        if (supported) {
-          await Linking.openURL(group.meetLink);
-        } else {
-          showErrorAlert('Cannot open the conference link');
+        // Validate and clean the URL
+        let meetUrl = group.meetLink.trim();
+        
+        // Ensure URL has protocol
+        if (!meetUrl.startsWith('http://') && !meetUrl.startsWith('https://')) {
+          meetUrl = 'https://' + meetUrl;
+        }
+        
+        console.log('🎥 Opening Google Meet:', meetUrl);
+        
+        try {
+          // Try to open directly without canOpenURL check (more reliable)
+          await Linking.openURL(meetUrl);
+        } catch (linkError) {
+          console.error('❌ Failed to open meet link:', linkError);
+          showErrorAlert('Cannot open the meeting link. Please check if the link is valid or try opening it manually.');
         }
       } else {
         // Fallback: create a new Google Meet
-        const meetingUrl = `https://meet.google.com/new?title=${encodeURIComponent(
-          group.title || 'Study Group'
-        )}`;
+        const meetingUrl = `https://meet.google.com/new`;
         console.log('🎥 Creating new Google Meet:', meetingUrl);
-        await Linking.openURL(meetingUrl);
+        
+        try {
+          await Linking.openURL(meetingUrl);
+        } catch (linkError) {
+          console.error('❌ Failed to create new meet:', linkError);
+          showErrorAlert('Cannot open Google Meet. Please make sure you have a browser installed.');
+        }
       }
     } catch (error) {
       console.error('❌ Error joining conference:', error);
@@ -508,7 +588,10 @@ export default function JoinGroupsScreen({ selectedDate, onBack }: JoinGroupsScr
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>

@@ -81,7 +81,22 @@ export const useTTS = () => {
   const loadVoices = async () => {
     try {
       const voices = await Speech.getAvailableVoicesAsync();
-      setAvailableVoices(voices);
+      
+      // Filter to only American English (en-US) and Spanish (es-US or es-ES)
+      const filteredVoices = voices.filter(voice => 
+        voice.language === 'en-US' ||     // American English only
+        voice.language === 'es-US' ||     // Spanish (US)
+        voice.language === 'es-ES'        // Spanish (Spain)
+      );
+      
+      // Sort: American English first, then Spanish
+      const sortedVoices = filteredVoices.sort((a, b) => {
+        if (a.language === 'en-US' && b.language !== 'en-US') return -1;
+        if (a.language !== 'en-US' && b.language === 'en-US') return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      setAvailableVoices(sortedVoices);
     } catch (error) {
       // Silently handle errors
     }

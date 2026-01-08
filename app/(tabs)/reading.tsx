@@ -1,6 +1,8 @@
 import { API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
+import { UserData, defaultUserData } from '@/types/UserData';
 import { checkGoogleCalendarAccess, isGoogleCalendarAccessError, requestGoogleCalendarAccess } from '@/utils/googleCalendarAuth';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,6 +51,7 @@ interface StudyGroup {
   maxParticipants: number;
   startTime: string;
   startTimeLocal?: string;
+  scheduledTimeLocal?: string; // Backend sends this for display
   durationMinutes: number;
   attendeeEmails?: string[];
   frequency?: string;
@@ -90,34 +93,68 @@ const getDaysInMonth = (date: Date): Date[] => {
   const lastDay = new Date(year, month + 1, 0);
   const daysInMonth = lastDay.getDate();
   const startingDayOfWeek = firstDay.getDay();
-  
+
   const days: Date[] = [];
-  
+
   // Add previous month's trailing days
   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
     days.push(new Date(year, month, -i));
   }
-  
+
   // Add current month's days
   for (let day = 1; day <= daysInMonth; day++) {
     days.push(new Date(year, month, day));
   }
-  
+
   // Add next month's leading days to fill the grid
   const remainingDays = 42 - days.length; // 6 weeks * 7 days
   for (let day = 1; day <= remainingDays; day++) {
     days.push(new Date(year, month + 1, day));
   }
-  
+
   return days;
 };
 
 const formatTime = (date: Date): string => {
-  return date.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
     minute: '2-digit',
-    hour12: true 
+    hour12: true
   });
+};
+
+// Helper function to get timezone abbreviation
+const getTimezoneAbbr = (tz?: string): string => {
+  if (!tz) return '';
+  
+  const abbrs: Record<string, string> = {
+    'America/New_York': 'ET',
+    'America/Chicago': 'CT',
+    'America/Denver': 'MT',
+    'America/Los_Angeles': 'PT',
+    'America/Anchorage': 'AKT',
+    'Pacific/Honolulu': 'HT'
+  };
+  
+  return abbrs[tz] || tz;
+};
+
+// Helper function to format time with timezone
+const formatTimeWithTimezone = (dateString: string, timezone?: string): string => {
+  const date = new Date(dateString);
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  // If timezone is provided, show it with abbreviation
+  if (timezone) {
+    const tzAbbr = getTimezoneAbbr(timezone);
+    return `${timeStr} (${tzAbbr})`;
+  }
+  
+  return timeStr;
 };
 
 const formatDate = (date: Date): string => {
@@ -147,6 +184,67 @@ const formatDayOfWeek = (date: Date): string => {
 const DAYS_OF_WEEK = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 ];
+
+// US Timezones for dropdown selection
+// Note: Offsets shown are for Standard Time (winter). During Daylight Saving Time, most zones are 1 hour less negative.
+// Eastern: UTC-5 (EST) / UTC-4 (EDT)
+// Central: UTC-6 (CST) / UTC-5 (CDT)
+// Mountain: UTC-7 (MST) / UTC-6 (MDT)
+// Pacific: UTC-8 (PST) / UTC-7 (PDT)
+// Alaska: UTC-9 (AKST) / UTC-8 (AKDT)
+// Hawaii: UTC-10 (HST - no DST)
+const US_TIMEZONES = [
+  { label: 'Eastern Time (ET)', value: 'America/New_York', offset: 'UTC-5', offsetMinutes: -300 },
+  { label: 'Central Time (CT)', value: 'America/Chicago', offset: 'UTC-6', offsetMinutes: -360 },
+  { label: 'Mountain Time (MT)', value: 'America/Denver', offset: 'UTC-7', offsetMinutes: -420 },
+  { label: 'Pacific Time (PT)', value: 'America/Los_Angeles', offset: 'UTC-8', offsetMinutes: -480 },
+  { label: 'Alaska Time (AKT)', value: 'America/Anchorage', offset: 'UTC-9', offsetMinutes: -540 },
+  { label: 'Hawaii Time (HT)', value: 'Pacific/Honolulu', offset: 'UTC-10', offsetMinutes: -600 },
+];
+
+// Helper function to convert local time to UTC based on selected timezone
+const convertLocalToUTC = (localDate: Date, timezone: string): Date => {
+  // Get the timezone info for the selected timezone
+  const selectedTz = US_TIMEZONES.find(tz => tz.value === timezone);
+  if (!selectedTz) {
+    console.warn('⚠️ Timezone not found, using date as-is:', timezone);
+    return localDate;
+  }
+
+  // Extract the date/time components that the user entered
+  // These represent the time in the SELECTED timezone (not the user's system timezone)
+  const year = localDate.getFullYear();
+  const month = localDate.getMonth();
+  const day = localDate.getDate();
+  const hours = localDate.getHours();
+  const minutes = localDate.getMinutes();
+  
+  // The user enters time thinking it's in the selected timezone
+  // For example: "00:00" (midnight) in Eastern Time
+  // We need to convert this to UTC
+  
+  // Step 1: Create a UTC date with the given year/month/day/hour/minute
+  const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0));
+  
+  // Step 2: Apply the timezone offset
+  // For timezones WEST of UTC (like US timezones), the offset is negative
+  // Example: Eastern Time is UTC-5 (offsetMinutes = -300)
+  // If user enters midnight (00:00) ET:
+  //   UTC time = 00:00 - (-300 minutes) = 00:00 + 300 minutes = 05:00 UTC
+  const tzOffsetMinutes = selectedTz.offsetMinutes;
+  const actualUtcDate = new Date(utcDate.getTime() - (tzOffsetMinutes * 60 * 1000));
+  
+  console.log('🕐 Time Conversion:', {
+    input: `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`,
+    timezone: `${selectedTz.label} (${selectedTz.offset})`,
+    offsetMinutes: tzOffsetMinutes,
+    calculation: `Subtracting offset: ${tzOffsetMinutes} minutes`,
+    utcResult: actualUtcDate.toISOString(),
+    utcDateTime: `${actualUtcDate.toISOString().substring(0, 10)} ${actualUtcDate.toISOString().substring(11, 16)} UTC`
+  });
+  
+  return actualUtcDate;
+};
 
 // Map of UTC offsets (in minutes) to IANA timezone names (common timezones)
 const TIMEZONE_OFFSET_MAP: Record<string, string> = {
@@ -180,42 +278,49 @@ const TIMEZONE_OFFSET_MAP: Record<string, string> = {
 // Get user's timezone (returns IANA timezone name like "America/New_York")
 const getUserTimezone = (): string => {
   try {
-    // Try Intl API first if available (works in newer React Native versions)
+    // First, get the timezone offset (more reliable than system settings)
+    const offset = -new Date().getTimezoneOffset(); // Minutes (positive for east of UTC)
+    
+    // Try Intl API to get system timezone
+    let systemTimezone: string | null = null;
     if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
       try {
-        const intlTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (intlTimezone && intlTimezone !== 'UTC') {
-          console.log('🌍 Detected timezone (Intl):', intlTimezone);
-          return intlTimezone;
-        }
+        systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       } catch (intlError) {
-        console.log('Intl API not available, using fallback');
       }
     }
+
+    // Map offset to correct IANA timezone
+    const offsetBasedTimezone = TIMEZONE_OFFSET_MAP[offset.toString()];
     
-    // Fallback: Map timezone offset to IANA timezone
-    const offset = -new Date().getTimezoneOffset(); // Minutes
-    const mappedTimezone = TIMEZONE_OFFSET_MAP[offset.toString()];
-    
-    if (mappedTimezone) {
-      console.log('🌍 Detected timezone (offset mapping):', mappedTimezone, `(UTC${offset >= 0 ? '+' : ''}${offset / 60})`);
-      return mappedTimezone;
+    // If offset matches Pakistan (UTC+5 = -300 minutes), use Asia/Karachi
+    // Prioritize offset over system timezone for accuracy
+    if (offset === -300 && offsetBasedTimezone) {
+      return offsetBasedTimezone; // "Asia/Karachi"
     }
     
-    // If no exact match, find closest timezone
+    // For other offsets, use offset-based timezone if available
+    if (offsetBasedTimezone) {
+      return offsetBasedTimezone;
+    }
+
+    // Fallback to system timezone if offset mapping not found
+    if (systemTimezone && systemTimezone !== 'UTC') {
+      return systemTimezone;
+    }
+    
+    // Last resort: Use closest timezone based on offset
     const closestOffset = Object.keys(TIMEZONE_OFFSET_MAP)
       .map(Number)
-      .reduce((prev, curr) => 
+      .reduce((prev, curr) =>
         Math.abs(curr - offset) < Math.abs(prev - offset) ? curr : prev
       );
-    
+
     const closestTimezone = TIMEZONE_OFFSET_MAP[closestOffset.toString()];
-    console.log('🌍 Using closest timezone:', closestTimezone, `(UTC${closestOffset >= 0 ? '+' : ''}${closestOffset / 60})`);
     return closestTimezone;
-    
+
   } catch (error) {
-    console.error('Error getting timezone:', error);
-    // Return a safe default
+    console.error('❌ Error getting timezone:', error);
     return 'UTC';
   }
 };
@@ -300,18 +405,18 @@ const CustomAlert = ({ visible, title, message, type, buttons, onClose }: Custom
 
 export default function ReadingScreen() {
   const { showLoading, hideLoading } = useLoading();
-  
+
   // Calendar state
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  
+
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showDateOptionsModal, setShowDateOptionsModal] = useState(false);
   const [showJoinGroupsScreen, setShowJoinGroupsScreen] = useState(false);
   const [showDashboardScreen, setShowDashboardScreen] = useState(false);
-  
+
   // Custom alert state
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -332,14 +437,17 @@ export default function ReadingScreen() {
   });
   const [showUnifiedDashboard, setShowUnifiedDashboard] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<StudyGroup | null>(null);
-  
+
   // Date/Time picker states
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
-  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [startDateTime, setStartDateTime] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   
+  // Time input state (for controlled inputs)
+  const [hourInput, setHourInput] = useState('00');
+  const [minuteInput, setMinuteInput] = useState('00');
+
   // Form states
   const [isRecurring, setIsRecurring] = useState(false);
   const [formData, setFormData] = useState({
@@ -355,6 +463,10 @@ export default function ReadingScreen() {
     endDate: ''
   });
   
+  // Timezone selection state
+  const [selectedTimezone, setSelectedTimezone] = useState<string>('America/New_York'); // Default to Eastern
+  const [showTimezoneModal, setShowTimezoneModal] = useState(false);
+
   const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
   const [userStudyGroups, setUserStudyGroups] = useState<StudyGroup[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -381,19 +493,19 @@ export default function ReadingScreen() {
 
   const showSuccessAlert = (message: string, onPress?: () => void) => {
     showAlert('Success', message, 'success', [
-      { text: 'OK', onPress: onPress || (() => {}) }
+      { text: 'OK', onPress: onPress || (() => { }) }
     ]);
   };
 
   const showErrorAlert = (message: string, onPress?: () => void) => {
     showAlert('Error', message, 'error', [
-      { text: 'OK', onPress: onPress || (() => {}) }
+      { text: 'OK', onPress: onPress || (() => { }) }
     ]);
   };
 
   const showConfirmAlert = (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => {
     showAlert(title, message, 'warning', [
-      { text: 'Cancel', onPress: onCancel || (() => {}), style: 'cancel' },
+      { text: 'Cancel', onPress: onCancel || (() => { }), style: 'cancel' },
       { text: 'Confirm', onPress: onConfirm, style: 'destructive' }
     ]);
   };
@@ -408,21 +520,19 @@ export default function ReadingScreen() {
     const checkCalendarConnection = async () => {
       try {
         const justConnected = await SecureStore.getItemAsync('calendarJustConnected');
-        
+
         if (justConnected === 'true') {
-          console.log('✅ Calendar was just connected, showing success message');
-          
+
           // Clear the flag
           await SecureStore.deleteItemAsync('calendarJustConnected');
-          
+
           // Restore the selected date if it was stored
           const pendingDateStr = await SecureStore.getItemAsync('pendingCreateGroupDate');
           if (pendingDateStr) {
             const pendingDate = new Date(pendingDateStr);
-            console.log('📅 Restoring pending date:', pendingDate);
             setSelectedDate(pendingDate);
             await SecureStore.deleteItemAsync('pendingCreateGroupDate');
-            
+
             // Show success message and open create modal
             showSuccessAlert('Google Calendar access granted! You can now create study groups.', () => {
               // Set the date again and open the modal
@@ -431,13 +541,13 @@ export default function ReadingScreen() {
               setTimeout(() => {
                 const dateTime = new Date(pendingDate);
                 const today = new Date();
-                
+
                 if (pendingDate.toDateString() === today.toDateString()) {
                   dateTime.setHours(today.getHours(), today.getMinutes(), 0, 0);
                 } else {
-                  dateTime.setHours(19, 0, 0, 0);
+                  dateTime.setHours(0, 0, 0, 0); // Default to midnight for future dates
                 }
-                
+
                 setStartDateTime(dateTime);
                 setFormData(prev => ({
                   ...prev,
@@ -452,7 +562,6 @@ export default function ReadingScreen() {
           }
         } else if (justConnected === 'false') {
           // Calendar connection failed
-          console.log('❌ Calendar connection failed');
           await SecureStore.deleteItemAsync('calendarJustConnected');
           await SecureStore.deleteItemAsync('pendingCreateGroupDate');
           showErrorAlert('Failed to connect Google Calendar. Please try again.');
@@ -461,7 +570,7 @@ export default function ReadingScreen() {
         console.error('Error checking calendar connection:', error);
       }
     };
-    
+
     checkCalendarConnection();
   }, []);
 
@@ -480,24 +589,23 @@ export default function ReadingScreen() {
         const description = group.description || '';
         const creatorName = group.creatorName || '';
         const query = searchQuery.toLowerCase();
-        
+
         return title.toLowerCase().includes(query) ||
-               description.toLowerCase().includes(query) ||
-               creatorName.toLowerCase().includes(query);
+          description.toLowerCase().includes(query) ||
+          creatorName.toLowerCase().includes(query);
       });
       setFilteredStudyGroups(filtered);
     }
   }, [userStudyGroups, searchQuery]);
 
-    const loadStudyGroups = async (showLoadingIndicator = true) => {
+  const loadStudyGroups = async (showLoadingIndicator = true) => {
     try {
       if (showLoadingIndicator) {
         showLoading('Loading study groups...');
       }
-      
+
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
-        console.log('❌ No auth token found');
         setStudyGroups([]);
         if (showLoadingIndicator) {
           hideLoading();
@@ -505,7 +613,7 @@ export default function ReadingScreen() {
         return;
       }
 
-      console.log('🔄 Fetching study groups from API...');
+      
       const response = await fetch(API_ENDPOINTS.STUDY_GROUPS, {
         method: 'GET',
         headers: {
@@ -514,72 +622,68 @@ export default function ReadingScreen() {
         },
       });
 
+
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Study groups fetched successfully:', data);
-        
+
         if (data.success && data.data && data.data.groups) {
+          
           // Map API response to our StudyGroup interface
-          const normalizedGroups = data.data.groups.map((group: any) => {
-            console.log('🕐 API RESPONSE MAPPING DEBUG:');
-            console.log('🕐 Raw group from API:', group);
-            console.log('🕐 group.scheduled_time_local:', group.scheduled_time_local);
-            console.log('🕐 group.next_occurrence_local:', group.next_occurrence_local);
-            console.log('🕐 group.scheduled_time:', group.scheduled_time);
-            console.log('🕐 group.next_occurrence:', group.next_occurrence);
-            console.log('🕐 Will use startTimeLocal as:', group.scheduled_time_local || group.next_occurrence_local);
-            console.log('🕐 Will use startTime as:', group.scheduled_time || group.next_occurrence);
-            
+          const normalizedGroups = data.data.groups.map((group: any, index: number) => {
+
             const mappedGroup = {
               id: group.id.toString(),
               title: group.title || 'Untitled Study Group',
               description: group.description || 'No description',
-              maxParticipants: group.max_participants || 10,
-              startTime: group.scheduled_time || group.next_occurrence,
-              startTimeLocal: group.scheduled_time_local || group.next_occurrence_local,
-              durationMinutes: group.duration_minutes || 60,
+              maxParticipants: group.max_participants || group.maxParticipants || 10,
+              startTime: group.scheduled_time || group.scheduledTime || group.next_occurrence || group.nextOccurrence,
+              startTimeLocal: group.scheduled_time_local || group.scheduledTimeLocal || group.next_occurrence_local || group.nextOccurrenceLocal,
+              scheduledTimeLocal: group.scheduled_time_local || group.scheduledTimeLocal || group.next_occurrence_local || group.nextOccurrenceLocal,
+              durationMinutes: group.duration_minutes || group.durationMinutes || 60,
               attendeeEmails: [], // API doesn't return attendee emails in this endpoint
-              frequency: group.recurrence_pattern || 'weekly',
-              interval: group.recurrence_interval || 1,
-              daysOfWeek: group.recurrence_days_of_week || [],
-              endDate: group.recurrence_end_date,
-              endDateLocal: group.recurrence_end_date_local,
-              meetLink: group.meet_link,
-              meetId: group.meet_id,
+              frequency: group.recurrence_pattern || group.recurrencePattern || 'weekly',
+              interval: group.recurrence_interval || group.recurrenceInterval || 1,
+              daysOfWeek: group.recurrence_days_of_week || group.recurrenceDaysOfWeek || [],
+              endDate: group.recurrence_end_date || group.recurrenceEndDate,
+              endDateLocal: group.recurrence_end_date_local || group.recurrenceEndDateLocal,
+              meetLink: group.meet_link || group.meetLink,
+              meetId: group.meet_id || group.meetId,
               theme: group.theme,
-              isRecurring: group.is_recurring || false,
-              createdAt: group.created_at,
-              createdAtLocal: group.created_at_local,
+              isRecurring: group.is_recurring || group.isRecurring || false,
+              createdAt: group.created_at || group.createdAt,
+              createdAtLocal: group.created_at_local || group.createdAtLocal,
               // Additional fields from API
-              userRole: group.user_role,
-              joinedAt: group.joined_at,
-              creatorName: group.creator_name,
-              creatorEmail: group.creator_email,
-              currentMembers: group.current_members,
-              isActive: group.is_active,
-              timezone: group.timezone,
-              requiresApproval: group.requires_approval
+              userRole: group.user_role || group.userRole,
+              joinedAt: group.joined_at || group.joinedAt,
+              creatorName: group.creator_name || group.creatorName,
+              creatorEmail: group.creator_email || group.creatorEmail,
+              currentMembers: group.current_members || group.currentMembers,
+              isActive: group.is_active ?? group.isActive,
+              timezone: group.timezone || group.timeZone,
+              requiresApproval: group.requires_approval ?? group.requiresApproval
             };
-            
-            console.log('🕐 MAPPED GROUP RESULT:');
-            console.log('🕐 mappedGroup.startTimeLocal:', mappedGroup.startTimeLocal);
-            console.log('🕐 mappedGroup.startTime:', mappedGroup.startTime);
-            console.log('🕐 Full mapped group:', mappedGroup);
-            
+
+
             return mappedGroup;
           });
+          
           setStudyGroups(normalizedGroups);
-          console.log('📚 Loaded study groups from API:', normalizedGroups.length);
         } else {
-          console.log('⚠️ No study groups data in response');
           setStudyGroups([]);
         }
       } else {
-        console.error('❌ Failed to fetch study groups:', response.status);
+        const errorText = await response.text();
+        console.error('❌ FETCH FAILED');
+        console.error('📥 Status:', response.status, response.statusText);
+        console.error('📥 Error Body:', errorText.substring(0, 500));
         setStudyGroups([]);
       }
     } catch (error) {
-      console.error('❌ Error loading study groups from API:', error);
+      console.error('💥 EXCEPTION DURING FETCH');
+      console.error('Error type:', typeof error);
+      console.error('Error message:', (error as any)?.message);
+      console.error('Error stack:', (error as any)?.stack);
+      console.error('Full error:', JSON.stringify(error, null, 2));
       setStudyGroups([]);
     } finally {
       if (showLoadingIndicator) {
@@ -606,7 +710,6 @@ export default function ReadingScreen() {
         'Are you sure you want to delete this study group? This action cannot be undone.',
         async () => {
           try {
-            console.log('🗑️ Deleting study group:', groupId);
             const response = await fetch(API_ENDPOINTS.getStudyGroup(groupId), {
               method: 'DELETE',
               headers: {
@@ -617,15 +720,14 @@ export default function ReadingScreen() {
 
             if (response.ok) {
               const result = await response.json();
-              console.log('✅ Study group deleted successfully:', result);
-              
+
               // Refresh the study groups list
               await loadStudyGroups();
-              
+
               // Close the modal if it's open
               setShowGroupModal(false);
               setSelectedGroup(null);
-              
+
               showSuccessAlert('Study group deleted successfully!');
             } else {
               const error = await response.json();
@@ -648,9 +750,9 @@ export default function ReadingScreen() {
     try {
       const userData = await SecureStore.getItemAsync('userData');
       if (userData) {
-        const user = JSON.parse(userData);
+        const user = safeJsonParse<UserData>(userData, defaultUserData);
         const userEmail = user.email;
-        
+
         // Filter study groups where user is either the creator or has a role
         const userGroups = studyGroups.filter(group => {
           // Check if user is the creator or has a role in the group
@@ -658,7 +760,7 @@ export default function ReadingScreen() {
           const hasRole = group.userRole && group.userRole !== 'none';
           return isCreator || hasRole;
         });
-        
+
         setUserStudyGroups(userGroups);
       } else {
         setUserStudyGroups([]);
@@ -701,16 +803,15 @@ export default function ReadingScreen() {
 
   const handleCreateGroup = async () => {
     setShowDateOptionsModal(false);
-    
+
     // Check if user authenticated with Google - they already have calendar access
     try {
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const userData = JSON.parse(userDataString);
-        
+        const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
+
         // If user signed in with Google, they already have calendar access - skip the check
         if (userData.signupMethod === 'google') {
-          console.log('✅ User authenticated with Google, skipping calendar access check');
           openCreateModalWithDate();
           return;
         }
@@ -718,24 +819,21 @@ export default function ReadingScreen() {
     } catch (error) {
       console.error('Error checking signup method:', error);
     }
-    
+
     // For email users, check if they have Google Calendar access
-    console.log('🔍 Checking Google Calendar access for email user...');
     showLoading('Checking authentication...');
-    
+
     const hasCalendarAccess = await checkGoogleCalendarAccess();
     hideLoading();
-    
+
     if (!hasCalendarAccess) {
       // User doesn't have Google Calendar access, prompt them to authenticate
-      console.log('❌ User does not have Google Calendar access, showing auth prompt');
-      
+
       // Store the selected date so we can use it after authentication
       if (selectedDate) {
         await SecureStore.setItemAsync('pendingCreateGroupDate', selectedDate.toISOString());
-        console.log('💾 Stored pending create group date:', selectedDate.toISOString());
       }
-      
+
       showConfirmAlert(
         'Google Calendar Access Required',
         'To create study groups with Google Meet, you need to authenticate with Google Calendar. Would you like to authenticate now?',
@@ -744,11 +842,10 @@ export default function ReadingScreen() {
           showLoading('Opening Google authentication...');
           const success = await requestGoogleCalendarAccess();
           hideLoading();
-          
+
           if (success) {
             // Note: Success message will be shown when user returns to this screen
             // The useEffect will detect the calendar connection and show the message
-            console.log('✅ Calendar access request completed');
           } else {
             showErrorAlert('Failed to authenticate with Google. Please try again.');
             // Clear the pending date since auth failed
@@ -759,63 +856,56 @@ export default function ReadingScreen() {
           // User cancelled
           showErrorAlert('Google Calendar access is required to create study groups with Google Meet.');
           // Clear the pending date since user cancelled
-          SecureStore.deleteItemAsync('pendingCreateGroupDate').catch(() => {});
+          SecureStore.deleteItemAsync('pendingCreateGroupDate').catch(() => { });
         }
       );
       return;
     }
-    
+
     // User has calendar access, proceed to open the modal
-    console.log('✅ User has Google Calendar access, opening create modal');
     openCreateModalWithDate();
   };
-  
+
   const openCreateModalWithDate = () => {
     if (selectedDate) {
       // Open create modal with pre-filled date
       const dateTime = new Date(selectedDate);
-      // If the selected date is today, use current time, otherwise default to 7 PM
+      // If the selected date is today, use current time, otherwise default to midnight
       const today = new Date();
-      
-      console.log('📅 DATE PRESSED - Setting initial time');
-      console.log('📅 Selected date:', dateTime);
-      console.log('📅 Today:', today);
-      console.log('📅 Is today?', selectedDate.toDateString() === today.toDateString());
-      
+
+
       if (selectedDate.toDateString() === today.toDateString()) {
         // Use current time for today's date
         dateTime.setHours(today.getHours(), today.getMinutes(), 0, 0);
-        console.log('📅 Set to current time:', today.getHours(), ':', today.getMinutes());
       } else {
-        // Default to 7 PM for future dates
-        dateTime.setHours(19, 0, 0, 0);
-        console.log('📅 Set to 7 PM for future date');
+        // Default to midnight for future dates
+        dateTime.setHours(0, 0, 0, 0);
       }
-      
-      console.log('📅 Final dateTime:', dateTime);
-      console.log('📅 Final dateTime toISOString:', dateTime.toISOString());
-      
+
+
       setStartDateTime(dateTime);
+      
+      // Initialize time input fields
+      setHourInput(dateTime.getHours().toString().padStart(2, '0'));
+      setMinuteInput(dateTime.getMinutes().toString().padStart(2, '0'));
+      
+      // Convert to UTC based on selected timezone
+      const utcDateTime = convertLocalToUTC(dateTime, selectedTimezone);
       setFormData(prev => ({
         ...prev,
-        startTime: dateTime.toISOString()
+        startTime: utcDateTime.toISOString()
       }));
-      
-      console.log('📅 Updated formData.startTime:', dateTime.toISOString());
+
       setShowCreateModal(true);
     }
   };
 
   const handleCreateStudyGroup = async () => {
     try {
-      console.log('🚀 STARTING STUDY GROUP CREATION');
-      console.log('📋 Group Type:', isRecurring ? 'RECURRING' : 'ONE-TIME');
-      console.log('📋 Current Form Data:', JSON.stringify(formData, null, 2));
-      
+
       showLoading('Creating study group...');
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
-        console.log('❌ No auth token found');
         showErrorAlert('Please sign in to create study groups');
         hideLoading();
         return;
@@ -823,34 +913,26 @@ export default function ReadingScreen() {
 
       const userData = await SecureStore.getItemAsync('userData');
       if (!userData) {
-        console.log('❌ No user data found');
         showErrorAlert('User data not found. Please sign in again.');
         hideLoading();
         return;
       }
-      
-      const user = JSON.parse(userData);
+
+      const user = safeJsonParse<UserData>(userData, defaultUserData);
       const userEmail = user.email;
-      console.log('👤 User Email:', userEmail);
-      console.log('👤 User Data:', JSON.stringify(user, null, 2));
-      
+
       const attendeeEmails = formData.attendeeEmails
         .split(',')
         .map(email => email.trim())
         .filter(email => email.length > 0);
-      
-      console.log('📧 Original Attendee Emails:', formData.attendeeEmails);
-      console.log('📧 Processed Attendee Emails:', attendeeEmails);
-      
+
+
       // Add user's email to attendee list if not already included
       if (!attendeeEmails.includes(userEmail)) {
         attendeeEmails.push(userEmail);
-        console.log('📧 Added user email to attendee list');
       } else {
-        console.log('📧 User email already in attendee list');
       }
-      
-      console.log('📧 Final Attendee Emails:', attendeeEmails);
+
 
       const requestData = {
         title: formData.title,
@@ -860,9 +942,8 @@ export default function ReadingScreen() {
         attendeeEmails
       };
 
-      // Get user's timezone
-      const userTimezone = getUserTimezone();
-      console.log('🌍 User timezone:', userTimezone);
+      // Use the selected timezone from dropdown
+      const userTimezone = selectedTimezone;
 
       let response;
       if (isRecurring) {
@@ -875,40 +956,20 @@ export default function ReadingScreen() {
           daysOfWeek: formData.daysOfWeek,
           endDate: formData.endDate
         };
-        
-        console.log('🔄 CREATING RECURRING STUDY GROUP');
-        console.log('📡 API Endpoint:', API_ENDPOINTS.STUDY_GROUPS_CREATE_RECURRING);
-        console.log('📤 Request Headers:', {
-          'Authorization': `Bearer ${token.substring(0, 20)}...`,
-          'Content-Type': 'application/json',
-          'X-Timezone': userTimezone
+
+        console.log('📤 Sending Recurring Study Group Data:', {
+          ...recurringData,
+          timezone: userTimezone,
+          startTimeUTC: recurringData.startTime,
+          startTimeReadable: new Date(recurringData.startTime).toISOString()
         });
-        console.log('📤 Request Body (Recurring):', JSON.stringify(recurringData, null, 2));
-        console.log('📤 Form Data Used:', {
-          title: formData.title,
-          description: formData.description,
-          maxParticipants: formData.maxParticipants,
-          durationMinutes: formData.durationMinutes,
-          startTime: formData.startTime,
-          frequency: formData.frequency,
-          interval: formData.interval,
-          daysOfWeek: formData.daysOfWeek,
-          endDate: formData.endDate,
-          attendeeEmails: attendeeEmails
-        });
-        console.log('🕐 TIME DEBUGGING:');
-        console.log('🕐 startTime (UTC):', formData.startTime);
-        console.log('🕐 startTime (Local):', new Date(formData.startTime).toLocaleString());
-        console.log('🕐 User timezone:', userTimezone);
-        console.log('🕐 Expected local time: 7:25 PM');
-        console.log('🕐 UTC time being sent: 2:25 PM (correct for UTC+5)');
-        
+
         response = await fetch(API_ENDPOINTS.STUDY_GROUPS_CREATE_RECURRING, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            'X-Timezone': userTimezone
+            'x-timezone': userTimezone
           },
           body: JSON.stringify(recurringData)
         });
@@ -918,72 +979,52 @@ export default function ReadingScreen() {
           ...requestData,
           scheduledTime: formData.startTime
         };
-        
-        console.log('🔄 CREATING ONE-TIME STUDY GROUP');
-        console.log('📡 API Endpoint:', API_ENDPOINTS.STUDY_GROUPS_CREATE);
-        console.log('📤 Request Headers:', {
-          'Authorization': `Bearer ${token.substring(0, 20)}...`,
-          'Content-Type': 'application/json',
-          'X-Timezone': userTimezone
+
+        console.log('📤 Sending One-Time Study Group Data:', {
+          ...oneTimeData,
+          timezone: userTimezone,
+          scheduledTimeUTC: oneTimeData.scheduledTime,
+          scheduledTimeReadable: new Date(oneTimeData.scheduledTime).toISOString()
         });
-        console.log('📤 Request Body (One-time):', JSON.stringify(oneTimeData, null, 2));
-        console.log('📤 Form Data Used:', {
-          title: formData.title,
-          description: formData.description,
-          maxParticipants: formData.maxParticipants,
-          durationMinutes: formData.durationMinutes,
-          scheduledTime: formData.startTime,
-          attendeeEmails: attendeeEmails
-        });
-        console.log('🕐 TIME DEBUGGING:');
-        console.log('🕐 scheduledTime (UTC):', formData.startTime);
-        console.log('🕐 scheduledTime (Local):', new Date(formData.startTime).toLocaleString());
-        console.log('🕐 User timezone:', userTimezone);
-        console.log('🕐 Expected local time: 7:25 PM');
-        console.log('🕐 UTC time being sent: 2:25 PM (correct for UTC+5)');
-        
+
         response = await fetch(API_ENDPOINTS.STUDY_GROUPS_CREATE, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            'X-Timezone': userTimezone
+            'x-timezone': userTimezone
           },
           body: JSON.stringify(oneTimeData)
         });
       }
 
-      console.log('📥 Response Status:', response.status);
-      console.log('📥 Response Headers:', Object.fromEntries(response.headers.entries()));
-      
+
       if (response.ok) {
         const result = await response.json();
-        console.log('✅ SUCCESS RESPONSE');
-        console.log('📥 Response Body:', JSON.stringify(result, null, 2));
-        console.log('📥 Response Data:', result.data);
-        console.log('📥 Response Success:', result.success);
-        console.log('📥 Response Message:', result.message);
-        
+
         const newGroup: StudyGroup = {
           id: result.data.id.toString(),
           title: result.data.title,
           description: result.data.description,
-          maxParticipants: result.data.maxParticipants,
-          startTime: result.data.startTime || result.data.scheduledTime,
-          durationMinutes: result.data.durationMinutes,
-          attendeeEmails: Array.isArray(result.data.attendeeEmails) ? result.data.attendeeEmails : [],
-          frequency: result.data.frequency,
-          interval: result.data.interval,
-          daysOfWeek: result.data.daysOfWeek,
-          endDate: result.data.endDate,
-          meetLink: result.data.meetLink,
-          meetId: result.data.meetId,
+          maxParticipants: result.data.maxParticipants || result.data.max_participants,
+          startTime: result.data.startTime || result.data.scheduledTime || result.data.scheduled_time,
+          durationMinutes: result.data.durationMinutes || result.data.duration_minutes,
+          attendeeEmails: Array.isArray(result.data.attendeeEmails) 
+            ? result.data.attendeeEmails 
+            : Array.isArray(result.data.attendee_emails)
+            ? result.data.attendee_emails
+            : [],
+          frequency: result.data.frequency || result.data.recurrence_pattern,
+          interval: result.data.interval || result.data.recurrence_interval,
+          daysOfWeek: result.data.daysOfWeek || result.data.recurrence_days_of_week,
+          endDate: result.data.endDate || result.data.recurrence_end_date,
+          meetLink: result.data.meetLink || result.data.meet_link,
+          meetId: result.data.meetId || result.data.meet_id,
           theme: result.data.theme,
           isRecurring: isRecurring,
-          createdAt: result.data.createdAt
+          createdAt: result.data.createdAt || result.data.created_at
         };
-        
-        console.log('📦 Normalized Group Object:', JSON.stringify(newGroup, null, 2));
+
 
         // Refresh study groups from API instead of updating local state
         await loadStudyGroups();
@@ -992,24 +1033,25 @@ export default function ReadingScreen() {
         resetForm();
         showSuccessAlert('Study group created successfully!');
       } else {
-        const error = await response.json();
-        console.log('❌ ERROR RESPONSE');
-        console.log('📥 Error Status:', response.status);
-        console.log('📥 Error Headers:', Object.fromEntries(response.headers.entries()));
-        console.log('📥 Error Body:', JSON.stringify(error, null, 2));
-        console.log('📥 Error Message:', error.message);
-        console.log('📥 Error Details:', error);
+        const errorText = await response.text();
+        let error;
+        try {
+          error = JSON.parse(errorText);
+        } catch {
+          error = { message: errorText };
+        }
         
+
         // Check if error is due to missing Google Calendar access
         if (isGoogleCalendarAccessError(error)) {
           hideLoading();
-          
+
           // Check if user is a Google user (they shouldn't see this error)
           try {
             const userDataString = await SecureStore.getItemAsync('userData');
             if (userDataString) {
-              const userData = JSON.parse(userDataString);
-              
+              const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
+
               // If user signed in with Google, this is a backend issue - show generic error
               if (userData.signupMethod === 'google') {
                 console.error('❌ Google user received calendar access error - this should not happen');
@@ -1020,7 +1062,7 @@ export default function ReadingScreen() {
           } catch (parseError) {
             console.error('Error checking signup method:', parseError);
           }
-          
+
           // Show alert asking email user to authenticate with Google
           showConfirmAlert(
             'Google Calendar Access Required',
@@ -1030,7 +1072,7 @@ export default function ReadingScreen() {
               showLoading('Opening Google authentication...');
               const success = await requestGoogleCalendarAccess();
               hideLoading();
-              
+
               if (success) {
                 showSuccessAlert('Google Calendar access granted! Please try creating the study group again.', () => {
                   // Optionally, you could automatically retry the creation here
@@ -1050,24 +1092,18 @@ export default function ReadingScreen() {
         }
       }
     } catch (error) {
-      console.log('💥 EXCEPTION CAUGHT');
-      console.log('💥 Error Type:', typeof error);
-      console.log('💥 Error Name:', (error as any)?.name);
-      console.log('💥 Error Message:', (error as any)?.message);
-      console.log('💥 Error Stack:', (error as any)?.stack);
-      console.log('💥 Full Error Object:', JSON.stringify(error, null, 2));
       console.error('Error creating study group:', error);
-      
+
       // Check if the caught error is also a Google Calendar access error
       if (isGoogleCalendarAccessError(error)) {
         hideLoading();
-        
+
         // Check if user is a Google user (they shouldn't see this error)
         try {
           const userDataString = await SecureStore.getItemAsync('userData');
           if (userDataString) {
-            const userData = JSON.parse(userDataString);
-            
+            const userData = safeJsonParse<UserData>(userDataString, defaultUserData);
+
             // If user signed in with Google, this is a backend issue - show generic error
             if (userData.signupMethod === 'google') {
               console.error('❌ Google user received calendar access error - this should not happen');
@@ -1078,7 +1114,7 @@ export default function ReadingScreen() {
         } catch (parseError) {
           console.error('Error checking signup method:', parseError);
         }
-        
+
         showConfirmAlert(
           'Google Calendar Access Required',
           'To create study groups with Google Meet, you need to grant Google Calendar access. Would you like to authenticate now?',
@@ -1086,7 +1122,7 @@ export default function ReadingScreen() {
             showLoading('Opening Google authentication...');
             const success = await requestGoogleCalendarAccess();
             hideLoading();
-            
+
             if (success) {
               showSuccessAlert('Google Calendar access granted! Please try creating the study group again.');
             } else {
@@ -1131,35 +1167,10 @@ export default function ReadingScreen() {
       newDateTime.setMonth(selectedDate.getMonth());
       newDateTime.setDate(selectedDate.getDate());
       setStartDateTime(newDateTime);
-      setFormData(prev => ({ ...prev, startTime: newDateTime.toISOString() }));
-    }
-  };
-
-  const handleStartTimeChange = (event: any, selectedTime?: Date) => {
-    console.log('🕐 TIME PICKER CHANGED');
-    console.log('🕐 Event:', event);
-    console.log('🕐 Selected Time:', selectedTime);
-    console.log('🕐 Current startDateTime:', startDateTime);
-    
-    setShowStartTimePicker(false);
-    if (selectedTime) {
-      // Create a new date with the selected date but the selected time
-      const newDateTime = new Date(startDateTime);
-      newDateTime.setHours(selectedTime.getHours());
-      newDateTime.setMinutes(selectedTime.getMinutes());
-      newDateTime.setSeconds(0);
-      newDateTime.setMilliseconds(0);
       
-      console.log('🕐 New DateTime after setting hours/minutes:', newDateTime);
-      console.log('🕐 New DateTime toISOString:', newDateTime.toISOString());
-      console.log('🕐 New DateTime local time:', newDateTime.toLocaleString());
-      console.log('🕐 Selected time in local:', selectedTime.toLocaleString());
-      
-      setStartDateTime(newDateTime);
-      setFormData(prev => ({ ...prev, startTime: newDateTime.toISOString() }));
-      
-      console.log('🕐 Updated formData.startTime:', newDateTime.toISOString());
-      console.log('🕐 This should be the time you selected in your timezone');
+      // Convert local time to UTC based on selected timezone
+      const utcDateTime = convertLocalToUTC(newDateTime, selectedTimezone);
+      setFormData(prev => ({ ...prev, startTime: utcDateTime.toISOString() }));
     }
   };
 
@@ -1173,15 +1184,28 @@ export default function ReadingScreen() {
 
   const handleJoinConference = async (conferenceUrl: string) => {
     try {
-      const supported = await Linking.canOpenURL(conferenceUrl);
-      if (supported) {
-        await Linking.openURL(conferenceUrl);
-      } else {
-        Alert.alert('Error', 'Cannot open the conference link');
+      console.log('🎥 Opening conference URL:', conferenceUrl);
+      
+      // Validate and clean the URL
+      let meetUrl = conferenceUrl.trim();
+      
+      // Ensure URL has protocol
+      if (!meetUrl.startsWith('http://') && !meetUrl.startsWith('https://')) {
+        meetUrl = 'https://' + meetUrl;
+      }
+      
+      console.log('🎥 Cleaned URL:', meetUrl);
+      
+      try {
+        // Try to open directly without canOpenURL check (more reliable)
+        await Linking.openURL(meetUrl);
+      } catch (linkError) {
+        console.error('❌ Failed to open conference link:', linkError);
+        showErrorAlert('Cannot open the meeting link. Please check if the link is valid or try opening it manually.');
       }
     } catch (error) {
-      console.error('Error opening conference link:', error);
-      Alert.alert('Error', 'Failed to open conference link');
+      console.error('❌ Error opening conference link:', error);
+      showErrorAlert('Failed to open conference link');
     }
   };
 
@@ -1191,11 +1215,15 @@ export default function ReadingScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Study Groups</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.manageButton}
             onPress={() => setShowUnifiedDashboard(true)}
           >
@@ -1266,7 +1294,7 @@ export default function ReadingScreen() {
               const isSelected = selectedDate && date.toDateString() === selectedDate.toDateString();
 
               return (
-          <TouchableOpacity 
+                <TouchableOpacity
                   key={index}
                   style={[
                     styles.calendarDay,
@@ -1288,7 +1316,7 @@ export default function ReadingScreen() {
                   {hasStudyGroup && (
                     <View style={styles.studyGroupIndicator} />
                   )}
-          </TouchableOpacity>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -1303,8 +1331,8 @@ export default function ReadingScreen() {
             {getStudyGroupsForDate(selectedDate).length > 0 ? (
               <View style={styles.studyGroupsList}>
                 {getStudyGroupsForDate(selectedDate).map((group, index) => (
-              <TouchableOpacity
-                key={group.id}
+                  <TouchableOpacity
+                    key={group.id}
                     style={styles.studyGroupItem}
                     onPress={() => {
                       setSelectedGroup(group);
@@ -1318,15 +1346,15 @@ export default function ReadingScreen() {
                           'What would you like to do?',
                           [
                             { text: 'Cancel', style: 'cancel' },
-                            { 
-                              text: 'View Details', 
+                            {
+                              text: 'View Details',
                               onPress: () => {
                                 setSelectedGroup(group);
                                 setShowGroupModal(true);
                               }
                             },
-                            { 
-                              text: 'Delete', 
+                            {
+                              text: 'Delete',
                               style: 'destructive',
                               onPress: () => handleDeleteStudyGroup(group.id)
                             }
@@ -1344,57 +1372,49 @@ export default function ReadingScreen() {
                       {group.creatorName && (
                         <Text style={styles.creatorName}>Created by {group.creatorName}</Text>
                       )}
-                      
+
                       <View style={styles.studyGroupDateTime}>
                         <View style={styles.dateTimeRow}>
                           <Ionicons name="calendar" size={16} color={PRIMARY_COLOR} />
                           <Text style={styles.studyGroupDate}>
                             {formatDayOfWeek(new Date(group.startTime))}, {formatDateShort(new Date(group.startTime))}
-                    </Text>
-                  </View>
+                          </Text>
+                        </View>
                         <View style={styles.dateTimeRow}>
                           <Ionicons name="time" size={16} color={PRIMARY_COLOR} />
                           <Text style={styles.studyGroupTime}>
-                            {(() => {
-                              console.log('🕐 DAILY GROUPS TIME DISPLAY DEBUG:');
-                              console.log('🕐 group.startTimeLocal:', group.startTimeLocal);
-                              console.log('🕐 group.startTime:', group.startTime);
-                              console.log('🕐 formatTime(new Date(group.startTime)):', formatTime(new Date(group.startTime)));
-                              console.log('🕐 Using startTimeLocal?', !!group.startTimeLocal);
-                              console.log('🕐 Final display:', group.startTimeLocal || formatTime(new Date(group.startTime)));
-                              return group.startTimeLocal || formatTime(new Date(group.startTime));
-                            })()} ({group.durationMinutes} min)
+                          {group.scheduledTimeLocal || group.startTimeLocal} {group.timezone && `(${group.timezone})`} - {group.durationMinutes} min
                           </Text>
-                </View>
-                  </View>
-                      
-                      <Text style={styles.studyGroupDescription}>{group.description || 'No description'}</Text>
-                    
-                    <View style={styles.studyGroupMeta}>
-                      <View style={styles.metaRow}>
-                        <Ionicons name="people" size={14} color={BLACK} />
-                        <Text style={styles.metaText}>
-                          {group.currentMembers || '0'}/{group.maxParticipants} members
-                        </Text>
+                        </View>
                       </View>
-                      {group.isRecurring && (
+
+                      <Text style={styles.studyGroupDescription}>{group.description || 'No description'}</Text>
+
+                      <View style={styles.studyGroupMeta}>
                         <View style={styles.metaRow}>
-                          <Ionicons name="repeat" size={14} color={BLACK} />
-                          <Text style={styles.metaText}>Recurring</Text>
+                          <Ionicons name="people" size={14} color={BLACK} />
+                          <Text style={styles.metaText}>
+                            {group.currentMembers || '0'}/{group.maxParticipants} members
+                          </Text>
                         </View>
-                      )}
-                      {group.userRole && (
-                        <View style={styles.metaRow}>
-                          <Ionicons name="person" size={14} color={BLACK} />
-                          <Text style={styles.metaText}>{group.userRole}</Text>
-                        </View>
-                      )}
+                        {group.isRecurring && (
+                          <View style={styles.metaRow}>
+                            <Ionicons name="repeat" size={14} color={BLACK} />
+                            <Text style={styles.metaText}>Recurring</Text>
+                          </View>
+                        )}
+                        {group.userRole && (
+                          <View style={styles.metaRow}>
+                            <Ionicons name="person" size={14} color={BLACK} />
+                            <Text style={styles.metaText}>{group.userRole}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  </View>
                     <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
                   </TouchableOpacity>
                 ))}
-                </View>
+              </View>
             ) : (
               <Text style={styles.noStudyGroupsText}>
                 No study groups scheduled for this date. Tap the date to create one!
@@ -1409,21 +1429,21 @@ export default function ReadingScreen() {
             <Text style={styles.sectionTitle}>
               My Study Groups ({filteredStudyGroups.length})
             </Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.refreshButton}
               onPress={refreshStudyGroups}
             >
               <Ionicons name="refresh" size={20} color={PRIMARY_COLOR} />
             </TouchableOpacity>
           </View>
-                  
+
           {filteredStudyGroups.length > 0 ? (
             <View style={styles.studyGroupsList}>
               {filteredStudyGroups.map((group, index) => (
-                  <TouchableOpacity 
+                <TouchableOpacity
                   key={group.id}
                   style={styles.studyGroupItem}
-                    onPress={() => {
+                  onPress={() => {
                     setSelectedGroup(group);
                     setShowGroupModal(true);
                   }}
@@ -1435,15 +1455,15 @@ export default function ReadingScreen() {
                         'What would you like to do?',
                         [
                           { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'View Details', 
+                          {
+                            text: 'View Details',
                             onPress: () => {
                               setSelectedGroup(group);
                               setShowGroupModal(true);
                             }
                           },
-                          { 
-                            text: 'Delete', 
+                          {
+                            text: 'Delete',
                             style: 'destructive',
                             onPress: () => handleDeleteStudyGroup(group.id)
                           }
@@ -1461,30 +1481,22 @@ export default function ReadingScreen() {
                     {group.creatorName && (
                       <Text style={styles.creatorName}>Created by {group.creatorName}</Text>
                     )}
-                    
+
                     <View style={styles.studyGroupDateTime}>
                       <View style={styles.dateTimeRow}>
                         <Ionicons name="calendar" size={16} color={PRIMARY_COLOR} />
                         <Text style={styles.studyGroupDate}>
                           {formatDayOfWeek(new Date(group.startTime))}, {formatDateShort(new Date(group.startTime))}
-                    </Text>
-                </View>
+                        </Text>
+                      </View>
                       <View style={styles.dateTimeRow}>
                         <Ionicons name="time" size={16} color={PRIMARY_COLOR} />
                         <Text style={styles.studyGroupTime}>
-                          {(() => {
-                            console.log('🕐 MY GROUPS TIME DISPLAY DEBUG:');
-                            console.log('🕐 group.startTimeLocal:', group.startTimeLocal);
-                            console.log('🕐 group.startTime:', group.startTime);
-                            console.log('🕐 formatTime(new Date(group.startTime)):', formatTime(new Date(group.startTime)));
-                            console.log('🕐 Using startTimeLocal?', !!group.startTimeLocal);
-                            console.log('🕐 Final display:', group.startTimeLocal || formatTime(new Date(group.startTime)));
-                            return group.startTimeLocal || formatTime(new Date(group.startTime));
-                          })()} ({group.durationMinutes} min)
+                          {group.scheduledTimeLocal || group.startTimeLocal} {group.timezone && `(${group.timezone})`} - {group.durationMinutes} min
                         </Text>
                       </View>
                     </View>
-                    
+
                     <Text style={styles.studyGroupDescription}>{group.description || 'No description'}</Text>
                     <View style={styles.studyGroupMeta}>
                       <View style={styles.metaRow}>
@@ -1508,9 +1520,9 @@ export default function ReadingScreen() {
                     </View>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
-              </TouchableOpacity>
-            ))}
-          </View>
+                </TouchableOpacity>
+              ))}
+            </View>
           ) : (
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={48} color={SOFT_GRAY} />
@@ -1518,7 +1530,7 @@ export default function ReadingScreen() {
                 {searchQuery ? 'No matching study groups' : 'No study groups yet'}
               </Text>
               <Text style={styles.emptyStateText}>
-                {searchQuery 
+                {searchQuery
                   ? 'Try adjusting your search terms'
                   : 'Create your first study group by clicking on a calendar date'
                 }
@@ -1541,8 +1553,8 @@ export default function ReadingScreen() {
         <View style={styles.modalOverlay}>
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create Study Group</Text>
-              <TouchableOpacity 
+              <Text style={styles.modalTitle}>Create Study Group</Text>
+              <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => {
                   setShowCreateModal(false);
@@ -1552,7 +1564,7 @@ export default function ReadingScreen() {
                 <Ionicons name="close" size={24} color={DARK_GRAY} />
               </TouchableOpacity>
             </View>
-            
+
             {/* Recurring Toggle */}
             <View style={styles.recurringToggle}>
               <Text style={styles.recurringLabel}>Recurring Study Group</Text>
@@ -1563,7 +1575,7 @@ export default function ReadingScreen() {
                 thumbColor={WHITE}
               />
             </View>
-            
+
             <TextInput
               style={styles.input}
               placeholder="Study Group Title"
@@ -1571,7 +1583,7 @@ export default function ReadingScreen() {
               onChangeText={(text) => setFormData(prev => ({ ...prev, title: text }))}
               placeholderTextColor="#6c757d"
             />
-            
+
             <TextInput
               style={[styles.input, styles.textArea]}
               placeholder="Description"
@@ -1607,9 +1619,8 @@ export default function ReadingScreen() {
               </View>
             </View>
 
-            <Text style={styles.inputLabel}>Start Date & Time</Text>
-            <View style={styles.dateTimePickerContainer}>
-              <TouchableOpacity 
+            <Text style={styles.inputLabel}>Start Date</Text>
+              <TouchableOpacity
                 style={styles.dateTimePickerButton}
                 onPress={() => setShowStartDatePicker(true)}
               >
@@ -1623,40 +1634,101 @@ export default function ReadingScreen() {
                   })}
                 </Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.dateTimePickerButton}
-                onPress={() => {
-                  console.log('🕐 TIME PICKER BUTTON PRESSED');
-                  console.log('🕐 Current startDateTime:', startDateTime);
-                  console.log('🕐 Current formData.startTime:', formData.startTime);
-                  setShowStartTimePicker(true);
-                }}
-              >
-                <Ionicons name="time" size={20} color={PRIMARY_COLOR} />
-                <Text style={styles.dateTimePickerText}>
-                  {(() => {
-                    const displayTime = startDateTime.toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    });
-                    console.log('🕐 Displaying time in UI:', displayTime);
-                    console.log('🕐 startDateTime object:', startDateTime);
-                    console.log('🕐 startDateTime toISOString:', startDateTime.toISOString());
-                    console.log('🕐 startDateTime local string:', startDateTime.toLocaleString());
-                    return displayTime;
-                  })()}
-                </Text>
-              </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Start Time</Text>
+            <View style={styles.timeInputContainer}>
+              <View style={styles.timeInputWrapper}>
+                <TextInput
+                  style={styles.timeInput}
+                  placeholder="HH"
+                  value={hourInput}
+                  onChangeText={(text) => {
+                    // Only allow numbers
+                    const cleaned = text.replace(/[^0-9]/g, '');
+                    setHourInput(cleaned);
+                    
+                    const hour = parseInt(cleaned);
+                    if (!isNaN(hour) && hour >= 0 && hour <= 23) {
+                      const newDateTime = new Date(startDateTime);
+                      newDateTime.setHours(hour);
+                      setStartDateTime(newDateTime);
+                      
+                      // Convert local time to UTC based on selected timezone
+                      const utcDateTime = convertLocalToUTC(newDateTime, selectedTimezone);
+                      setFormData(prev => ({ ...prev, startTime: utcDateTime.toISOString() }));
+                    }
+                  }}
+                  onFocus={() => {
+                    // When focused, sync with current time
+                    setHourInput(startDateTime.getHours().toString().padStart(2, '0'));
+                  }}
+                  onBlur={() => {
+                    // Ensure 2 digits on blur
+                    if (hourInput.length === 1) {
+                      setHourInput(hourInput.padStart(2, '0'));
+                    } else if (hourInput === '') {
+                      setHourInput(startDateTime.getHours().toString().padStart(2, '0'));
+                    }
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholderTextColor="#6c757d"
+                  returnKeyType="next"
+                  selectTextOnFocus={true}
+                />
+                <Text style={styles.timeSeparator}>:</Text>
+                <TextInput
+                  style={styles.timeInput}
+                  placeholder="MM"
+                  value={minuteInput}
+                  onChangeText={(text) => {
+                    // Only allow numbers
+                    const cleaned = text.replace(/[^0-9]/g, '');
+                    setMinuteInput(cleaned);
+                    
+                    const minute = parseInt(cleaned);
+                    if (!isNaN(minute) && minute >= 0 && minute <= 59) {
+                      const newDateTime = new Date(startDateTime);
+                      newDateTime.setMinutes(minute);
+                      setStartDateTime(newDateTime);
+                      
+                      // Convert local time to UTC based on selected timezone
+                      const utcDateTime = convertLocalToUTC(newDateTime, selectedTimezone);
+                      setFormData(prev => ({ ...prev, startTime: utcDateTime.toISOString() }));
+                    }
+                  }}
+                  onFocus={() => {
+                    // When focused, sync with current time
+                    setMinuteInput(startDateTime.getMinutes().toString().padStart(2, '0'));
+                  }}
+                  onBlur={() => {
+                    // Ensure 2 digits on blur
+                    if (minuteInput.length === 1) {
+                      setMinuteInput(minuteInput.padStart(2, '0'));
+                    } else if (minuteInput === '') {
+                      setMinuteInput(startDateTime.getMinutes().toString().padStart(2, '0'));
+                    }
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholderTextColor="#6c757d"
+                  returnKeyType="done"
+                  selectTextOnFocus={true}
+                />
+              </View>
+              <Text style={styles.timeFormatHint}>24-hour format (00-23) - Tap to edit</Text>
             </View>
-            
-            <View style={styles.timezoneInfo}>
+
+            <TouchableOpacity
+              style={styles.timezoneSelector}
+              onPress={() => setShowTimezoneModal(true)}
+            >
               <Ionicons name="globe" size={16} color={PRIMARY_COLOR} />
               <Text style={styles.timezoneText}>
-                Timezone: {getUserTimezone()}
+                {US_TIMEZONES.find(tz => tz.value === selectedTimezone)?.label || 'Eastern Time (ET)'}
               </Text>
-            </View>
+              <Ionicons name="chevron-down" size={16} color={DARK_GRAY} />
+            </TouchableOpacity>
 
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Attendee Emails</Text>
@@ -1697,7 +1769,7 @@ export default function ReadingScreen() {
                         <Text style={styles.pickerText}>{formData.frequency}</Text>
                         <Ionicons name="chevron-down" size={16} color={DARK_GRAY} />
                       </TouchableOpacity>
-            </View>
+                    </View>
                   </View>
                   <View style={styles.halfInput}>
                     <Text style={styles.inputLabel}>Interval</Text>
@@ -1710,36 +1782,36 @@ export default function ReadingScreen() {
                       keyboardType="numeric"
                     />
                   </View>
-            </View>
+                </View>
 
                 <Text style={styles.inputLabel}>Days of Week (for weekly)</Text>
                 <View style={styles.daysOfWeekContainer}>
                   {DAYS_OF_WEEK.map((day, index) => (
-              <TouchableOpacity 
+                    <TouchableOpacity
                       key={day}
-                style={[
+                      style={[
                         styles.dayButton,
                         formData.daysOfWeek.includes(index) && styles.dayButtonSelected
-                ]}
-                onPress={() => {
+                      ]}
+                      onPress={() => {
                         const newDays = formData.daysOfWeek.includes(index)
                           ? formData.daysOfWeek.filter(d => d !== index)
                           : [...formData.daysOfWeek, index];
                         setFormData(prev => ({ ...prev, daysOfWeek: newDays }));
                       }}
                     >
-                <Text style={[
+                      <Text style={[
                         styles.dayButtonText,
                         formData.daysOfWeek.includes(index) && styles.dayButtonTextSelected
-                ]}>
+                      ]}>
                         {day.substring(0, 3)}
-                </Text>
-              </TouchableOpacity>
+                      </Text>
+                    </TouchableOpacity>
                   ))}
                 </View>
 
                 <Text style={styles.inputLabel}>End Date</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.dateTimePickerButton}
                   onPress={() => setShowEndDatePicker(true)}
                 >
@@ -1752,12 +1824,12 @@ export default function ReadingScreen() {
                       year: 'numeric'
                     })}
                   </Text>
-              </TouchableOpacity>
+                </TouchableOpacity>
               </>
             )}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setShowCreateModal(false);
@@ -1766,10 +1838,10 @@ export default function ReadingScreen() {
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[
-                  styles.modalButton, 
+                  styles.modalButton,
                   styles.createGroupButton
                 ]}
                 onPress={handleCreateStudyGroup}
@@ -1781,8 +1853,8 @@ export default function ReadingScreen() {
             </View>
           </ScrollView>
         </View>
-        
-        {/* Native Date/Time Pickers */}
+
+        {/* Native Date Pickers */}
         {showStartDatePicker && (
           <DateTimePicker
             value={startDateTime}
@@ -1792,16 +1864,7 @@ export default function ReadingScreen() {
             minimumDate={new Date()}
           />
         )}
-        
-        {showStartTimePicker && (
-          <DateTimePicker
-            value={startDateTime}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleStartTimeChange}
-          />
-        )}
-        
+
         {showEndDatePicker && (
           <DateTimePicker
             value={endDate}
@@ -1811,6 +1874,62 @@ export default function ReadingScreen() {
             minimumDate={startDateTime}
           />
         )}
+      </Modal>
+
+      {/* Timezone Selection Modal */}
+      <Modal
+        visible={showTimezoneModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowTimezoneModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.timezoneModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Timezone</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowTimezoneModal(false)}
+              >
+                <Ionicons name="close" size={24} color={DARK_GRAY} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.timezoneList}>
+              <Text style={styles.timezoneModalSubtitle}>
+                Choose your timezone for this study group
+              </Text>
+              {US_TIMEZONES.map((timezone) => (
+                <TouchableOpacity
+                  key={timezone.value}
+                  style={[
+                    styles.timezoneOption,
+                    selectedTimezone === timezone.value && styles.timezoneOptionSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedTimezone(timezone.value);
+                    setShowTimezoneModal(false);
+                  }}
+                >
+                  <View style={styles.timezoneOptionContent}>
+                    <Text style={[
+                      styles.timezoneOptionLabel,
+                      selectedTimezone === timezone.value && styles.timezoneOptionLabelSelected
+                    ]}>
+                      {timezone.label}
+                    </Text>
+                    <Text style={styles.timezoneOptionOffset}>
+                      {timezone.offset}
+                    </Text>
+                  </View>
+                  {selectedTimezone === timezone.value && (
+                    <Ionicons name="checkmark-circle" size={24} color={PRIMARY_COLOR} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {/* Study Group Details Modal */}
@@ -1825,8 +1944,8 @@ export default function ReadingScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {selectedGroup?.title || 'Untitled Study Group'}
-                </Text>
-              <TouchableOpacity 
+              </Text>
+              <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => setShowGroupModal(false)}
               >
@@ -1847,15 +1966,7 @@ export default function ReadingScreen() {
                   </Text>
                   <Text style={styles.groupDetailText}>
                     <Text style={styles.groupDetailLabel}>Time: </Text>
-                    {(() => {
-                      console.log('🕐 GROUP DETAILS TIME DISPLAY DEBUG:');
-                      console.log('🕐 selectedGroup.startTimeLocal:', selectedGroup.startTimeLocal);
-                      console.log('🕐 selectedGroup.startTime:', selectedGroup.startTime);
-                      console.log('🕐 formatTime(new Date(selectedGroup.startTime)):', formatTime(new Date(selectedGroup.startTime)));
-                      console.log('🕐 Using startTimeLocal?', !!selectedGroup.startTimeLocal);
-                      console.log('🕐 Final display:', selectedGroup.startTimeLocal || formatTime(new Date(selectedGroup.startTime)));
-                      return selectedGroup.startTimeLocal || formatTime(new Date(selectedGroup.startTime));
-                    })()} ({selectedGroup.durationMinutes} minutes)
+                    {selectedGroup.scheduledTimeLocal || selectedGroup.startTimeLocal} {selectedGroup.timezone && `(${selectedGroup.timezone})`} ({selectedGroup.durationMinutes} minutes)
                   </Text>
                   <Text style={styles.groupDetailText}>
                     <Text style={styles.groupDetailLabel}>Max Participants: </Text>
@@ -1875,10 +1986,10 @@ export default function ReadingScreen() {
 
                 <View style={styles.groupActions}>
                   {(selectedGroup.meetLink || !selectedGroup.isRecurring) && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.actionButton}
                       onPress={() => {
-                        const meetingUrl = selectedGroup.meetLink || 
+                        const meetingUrl = selectedGroup.meetLink ||
                           `https://meet.google.com/new?title=${encodeURIComponent(selectedGroup.title || 'Study Group')}`;
                         handleJoinConference(meetingUrl);
                       }}
@@ -1887,10 +1998,10 @@ export default function ReadingScreen() {
                       <Text style={styles.actionButtonText}>Join Meeting</Text>
                     </TouchableOpacity>
                   )}
-                  
+
                   {/* Show dashboard button only if user is admin/creator */}
                   {selectedGroup.userRole === 'admin' && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.actionButton, styles.dashboardButton]}
                       onPress={() => setShowDashboardScreen(true)}
                     >
@@ -1898,10 +2009,10 @@ export default function ReadingScreen() {
                       <Text style={styles.actionButtonText}>Manage Group</Text>
                     </TouchableOpacity>
                   )}
-                  
+
                   {/* Show delete button only if user is admin/creator */}
                   {selectedGroup.userRole === 'admin' && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.actionButton, styles.deleteButton]}
                       onPress={() => handleDeleteStudyGroup(selectedGroup.id)}
                     >
@@ -1929,7 +2040,7 @@ export default function ReadingScreen() {
               <Text style={styles.modalTitle}>
                 {selectedDate ? formatDate(selectedDate) : 'Selected Date'}
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => setShowDateOptionsModal(false)}
               >
@@ -1943,7 +2054,7 @@ export default function ReadingScreen() {
               </Text>
 
               <View style={styles.dateOptionsButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.dateOptionButton, styles.joinButton]}
                   onPress={handleJoinGroups}
                 >
@@ -1951,12 +2062,9 @@ export default function ReadingScreen() {
                   <Text style={styles.dateOptionButtonText}>
                     Join Groups on {selectedDate ? formatDateShort(selectedDate) : 'this date'}
                   </Text>
-                  <Text style={styles.dateOptionSubtext}>
-                    {getStudyGroupsForDate(selectedDate || new Date()).length} groups available
-                  </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.dateOptionButton, styles.dateOptionCreateButton]}
                   onPress={handleCreateGroup}
                 >
@@ -1982,7 +2090,7 @@ export default function ReadingScreen() {
         onRequestClose={() => setShowJoinGroupsScreen(false)}
       >
         {selectedDate && (
-          <JoinGroupsScreen 
+          <JoinGroupsScreen
             selectedDate={selectedDate}
             onBack={() => setShowJoinGroupsScreen(false)}
           />
@@ -1996,7 +2104,7 @@ export default function ReadingScreen() {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowDashboardScreen(false)}
       >
-        <GroupDashboardScreen 
+        <GroupDashboardScreen
           onBack={() => setShowDashboardScreen(false)}
           selectedGroup={selectedGroup}
         />
@@ -2009,7 +2117,7 @@ export default function ReadingScreen() {
         presentationStyle="fullScreen"
         onRequestClose={() => setShowUnifiedDashboard(false)}
       >
-        <UnifiedDashboardScreen 
+        <UnifiedDashboardScreen
           onBack={() => setShowUnifiedDashboard(false)}
         />
       </Modal>
@@ -2037,7 +2145,9 @@ const styles = StyleSheet.create({
     backgroundColor: OFF_WHITE,
     paddingHorizontal: 20,
     paddingTop: STATUS_BAR_OFFSET,
-    paddingBottom: 100,
+  },
+  scrollContent: {
+    paddingBottom: 120, // Extra space at the bottom to avoid tab bar collision
   },
   header: {
     flexDirection: 'row',
@@ -2139,12 +2249,77 @@ const styles = StyleSheet.create({
     backgroundColor: LIGHT_PURPLE,
     borderRadius: 8,
   },
+  timezoneSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: OFF_WHITE,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: SOFT_GRAY,
+  },
   timezoneText: {
     fontSize: 14,
     color: DARK_GRAY,
     fontFamily: 'serif',
     marginLeft: 8,
     fontWeight: '500',
+    flex: 1,
+  },
+  timezoneModalContent: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    width: '90%',
+    maxHeight: '70%',
+  },
+  timezoneModalSubtitle: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontFamily: 'serif',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  timezoneList: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  timezoneOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: OFF_WHITE,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  timezoneOptionSelected: {
+    backgroundColor: LIGHT_PURPLE,
+    borderColor: PRIMARY_COLOR,
+  },
+  timezoneOptionContent: {
+    flex: 1,
+  },
+  timezoneOptionLabel: {
+    fontSize: 16,
+    color: DARK_GRAY,
+    fontFamily: 'serif',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  timezoneOptionLabelSelected: {
+    color: PRIMARY_COLOR,
+    fontWeight: 'bold',
+  },
+  timezoneOptionOffset: {
+    fontSize: 12,
+    color: '#6c757d',
+    fontFamily: 'serif',
   },
   // Date/Time Picker Styles
   dateTimePickerContainer: {
@@ -2162,6 +2337,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: SOFT_GRAY,
+    marginHorizontal: 20,
+    marginBottom: 16,
   },
   dateTimePickerText: {
     fontSize: 16,
@@ -2169,6 +2346,46 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     marginLeft: 8,
     flex: 1,
+  },
+  // Time Input Styles
+  timeInputContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  timeInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: OFF_WHITE,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: SOFT_GRAY,
+    justifyContent: 'center',
+  },
+  timeInput: {
+    width: 60,
+    fontSize: 24,
+    fontWeight: '600',
+    color: DARK_GRAY,
+    textAlign: 'center',
+    padding: 8,
+    backgroundColor: WHITE,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: SOFT_GRAY,
+  },
+  timeSeparator: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: DARK_GRAY,
+    marginHorizontal: 8,
+  },
+  timeFormatHint: {
+    fontSize: 12,
+    color: '#6c757d',
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 
   // Calendar Styles

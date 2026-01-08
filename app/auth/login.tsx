@@ -145,22 +145,11 @@ const LoginScreen = () => {
       // Show success modal
       setShowSuccessModal(true);
       
-      // Check if user has completed onboarding
-      setTimeout(async () => {
-        try {
-          const profileStatus = await checkProfileCompletion();
-          if (profileStatus.isComplete) {
-            console.log('✅ Profile complete, redirecting to main app');
+      // Login successful - go to main app
+      // User already has an account, no need for onboarding
+      setTimeout(() => {
+        console.log('✅ Login successful, redirecting to main app');
             router.replace('/(tabs)');
-          } else {
-            console.log('⚠️ Profile incomplete, redirecting to onboarding');
-            router.replace('/(main)/testimonialscreen2');
-          }
-        } catch (error) {
-          console.error('Error checking profile completion:', error);
-          // Default to onboarding if check fails
-          router.replace('/(main)/testimonialscreen2');
-        }
       }, 2200);
     } catch (error) {
       console.error('❌ Login error:', error);

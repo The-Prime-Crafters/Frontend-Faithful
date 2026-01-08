@@ -2,26 +2,25 @@ import BackButton from '@/components/BackButton';
 import SuccessModal from '@/components/SuccessModal';
 import { API_ENDPOINTS } from '@/constants/API';
 import NotificationService from '@/utils/notifications';
-import { checkProfileCompletion } from '@/utils/profileCompletion';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -146,22 +145,11 @@ const SignupScreen = () => {
       // Send welcome notification
       await NotificationService.scheduleWelcomeNotification(userDataToStore.name);
       
-      // Check if user has completed onboarding (in case they're signing up again)
-      setTimeout(async () => {
-        try {
-          const profileStatus = await checkProfileCompletion();
-          if (profileStatus.isComplete) {
-            console.log('✅ Profile complete, redirecting to main app');
-            router.replace('/(tabs)');
-          } else {
-            console.log('⚠️ Profile incomplete, redirecting to onboarding');
-            router.replace('/(main)/testimonialscreen2');
-          }
-        } catch (error) {
-          console.error('Error checking profile completion:', error);
-          // Default to onboarding for new signups
-          router.replace('/(main)/testimonialscreen2');
-        }
+      // Signup successful - go to main app
+      // User can set preferences later from Account Settings
+      setTimeout(() => {
+        console.log('✅ Signup successful, redirecting to main app');
+        router.replace('/(tabs)');
       }, 2200);
     } catch (error) {
       console.error('❌ Email signup error:', error);

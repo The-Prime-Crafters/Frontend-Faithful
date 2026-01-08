@@ -1,6 +1,7 @@
 import { API_ENDPOINTS } from '@/constants/API';
 import { useLoading } from '@/contexts/LoadingContext';
 import AppSessionTracker from '@/utils/appSessionTracker';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,22 +9,22 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    Animated,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    Platform,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -53,7 +54,7 @@ interface PrayerRequest {
   status: 'Active' | 'Answered' | 'Closed';
   created_at: string;
   responses?: PrayerResponse[];
-  
+
   // Enhanced user information
   author_id?: number;
   author_name?: string;
@@ -75,7 +76,7 @@ interface PrayerResponse {
   is_anonymous: boolean;
   created_at: string;
   parent_response_id?: number;
-  
+
   // Enhanced user information
   responder_id?: number;
   responder_name?: string;
@@ -88,7 +89,7 @@ interface PrayerResponse {
   display_picture?: string;
   display_denomination?: string;
   display_age_group?: string;
-  
+
   // Nested replies
   replies?: PrayerResponse[];
 }
@@ -176,7 +177,7 @@ export default function PrayerScreen() {
   const [stats, setStats] = useState<PrayerStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [userData, setUserData] = useState<any>(null);
-  
+
   // Prayer request modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRequest, setNewRequest] = useState({
@@ -187,7 +188,7 @@ export default function PrayerScreen() {
     isUrgent: false,
     isPublic: true,
   });
-  
+
   // Prayer response modal
   const [showResponseModal, setShowResponseModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PrayerRequest | null>(null);
@@ -205,21 +206,21 @@ export default function PrayerScreen() {
     message: '',
     isAnonymous: false,
   });
-  
+
   // View More modal for long content
   const [showViewMoreModal, setShowViewMoreModal] = useState(false);
   const [viewMoreContent, setViewMoreContent] = useState('');
   const [viewMoreTitle, setViewMoreTitle] = useState('');
-  
+
   // Custom Alert State
   const [showCustomAlert, setShowCustomAlert] = useState(false);
   const [alertData, setAlertData] = useState({
     title: '',
     message: '',
     type: 'info' as 'success' | 'error' | 'info' | 'warning',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
-  
+
   // Filters
   const [filters, setFilters] = useState({
     category: 'All',
@@ -258,7 +259,7 @@ export default function PrayerScreen() {
       title,
       message,
       type,
-      onConfirm: onConfirm || (() => {}),
+      onConfirm: onConfirm || (() => { }),
     });
     setShowCustomAlert(true);
   };
@@ -287,7 +288,7 @@ export default function PrayerScreen() {
     if (postId && prayerRequests.length > 0) {
       const postIdNum = parseInt(postId as string);
       const targetPrayer = prayerRequests.find(prayer => prayer.id === postIdNum);
-      
+
       if (targetPrayer) {
         // Auto-open response modal if autoOpenModal parameter is present
         if (autoOpenModal === 'true') {
@@ -321,33 +322,36 @@ export default function PrayerScreen() {
       // First, load from SecureStore (fast)
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const data = JSON.parse(userDataString);
-        setUserData(data);
+        const data = safeJsonParse(userDataString, null);
+        if (data) {
+          setUserData(data);
+        }
       }
-      
+
       // Then, fetch fresh data from API to get latest profile picture
       try {
         const token = await SecureStore.getItemAsync('authToken');
         if (token) {
-          const profileResponse = await fetch(`${API_BASE_URL}/api/users/profile`, {
+          const profileResponse = await fetch(API_ENDPOINTS.USERS_PROFILE, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
           });
-          
+
           if (profileResponse.ok) {
             const profileData = await profileResponse.json();
             const freshUser = profileData.user || profileData;
-            
+
             // Update user data with fresh profile picture
+            const existingUser = safeJsonParse(userDataString, {});
             const updatedUser = {
-              ...(userDataString ? JSON.parse(userDataString) : {}),
+              ...existingUser,
               picture: freshUser.picture, // Always use latest picture from backend
-              name: freshUser.name || (userDataString ? JSON.parse(userDataString).name : ''),
-              email: freshUser.email || (userDataString ? JSON.parse(userDataString).email : ''),
+              name: freshUser.name || existingUser.name || '',
+              email: freshUser.email || existingUser.email || '',
             };
-            
+
             // Save to SecureStore and state
             await SecureStore.setItemAsync('userData', JSON.stringify(updatedUser));
             setUserData(updatedUser);
@@ -366,7 +370,7 @@ export default function PrayerScreen() {
     try {
       showLoading('Loading prayers...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         return;
       }
@@ -401,7 +405,7 @@ export default function PrayerScreen() {
     try {
       showLoading('Loading your prayers...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         setMyPrayerRequests([]);
         return;
@@ -431,7 +435,7 @@ export default function PrayerScreen() {
     try {
       showLoading('Loading prayer statistics...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         return;
       }
@@ -467,20 +471,20 @@ export default function PrayerScreen() {
   }, [activeTab]);
 
   const handleCreatePrayerRequest = async () => {
-      if (!newRequest.title.trim()) {
-        showAlert('Error', 'Please enter a prayer request title', 'error');
-        return;
-      }
-      
-      if (!newRequest.description.trim()) {
-        showAlert('Error', 'Please enter a prayer request description', 'error');
-        return;
-      }
+    if (!newRequest.title.trim()) {
+      showAlert('Error', 'Please enter a prayer request title', 'error');
+      return;
+    }
+
+    if (!newRequest.description.trim()) {
+      showAlert('Error', 'Please enter a prayer request description', 'error');
+      return;
+    }
 
     try {
       showLoading('Creating prayer request...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         showAlert('Error', 'Authentication required', 'error');
         return;
@@ -495,7 +499,7 @@ export default function PrayerScreen() {
         is_urgent: newRequest.isUrgent,
         is_public: newRequest.isPublic,
       };
-      
+
       const response = await fetch(API_ENDPOINTS.PRAYER_REQUESTS, {
         method: 'POST',
         headers: {
@@ -551,7 +555,7 @@ export default function PrayerScreen() {
     try {
       showLoading('Sending prayer response...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         showAlert('Error', 'Authentication required', 'error');
         return;
@@ -563,10 +567,10 @@ export default function PrayerScreen() {
         message: responseData.message,
         is_anonymous: responseData.isAnonymous,
       };
-      
+
       // Ensure ID is a number
       const requestId = Number(selectedRequest.id);
-      
+
       const response = await fetch(`${API_ENDPOINTS.PRAYER_REQUESTS}/${requestId}/respond`, {
         method: 'POST',
         headers: {
@@ -578,21 +582,21 @@ export default function PrayerScreen() {
 
       if (response.ok) {
         const result = await response.json();
-        
+
         // Track community engagement
         const sessionTracker = AppSessionTracker.getInstance();
         sessionTracker.trackActivity('community_engagement', 10, {
           type: 'prayer_response',
           responseType: responseData.responseType,
         });
-        
+
         showAlert('Success', 'Prayer response sent successfully!', 'success', () => {
           closeResponseModal();
         });
-        
+
         // Reload user data first to ensure latest profile picture is cached
         await loadUserData();
-        
+
         // Then reload the prayer feed to get updated responses with correct display picture
         await loadPrayerFeed();
       } else {
@@ -601,7 +605,7 @@ export default function PrayerScreen() {
         try {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
-        const errorData = await response.json();
+            const errorData = await response.json();
             errorMessage = errorData.message || errorData.error || errorMessage;
           } else {
             // Backend returned non-JSON (HTML/text)
@@ -628,7 +632,7 @@ export default function PrayerScreen() {
     try {
       showLoading('Sending reply...');
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         showAlert('Error', 'Authentication required', 'error');
         return;
@@ -640,7 +644,7 @@ export default function PrayerScreen() {
         message: replyData.message,
         is_anonymous: replyData.isAnonymous,
       };
-      
+
       const response = await fetch(API_ENDPOINTS.PRAYER_REPLY(selectedResponse.id), {
         method: 'POST',
         headers: {
@@ -652,10 +656,10 @@ export default function PrayerScreen() {
 
       if (response.ok) {
         const result = await response.json();
-        
+
         // Trigger backend to send push notification to prayer request author
         console.log('✅ Reply sent, backend should send notification to request author');
-        
+
         showAlert('Success', 'Reply sent successfully!', 'success', () => {
           setShowReplyModal(false);
           setSelectedResponse(null);
@@ -665,10 +669,10 @@ export default function PrayerScreen() {
           message: '',
           isAnonymous: false,
         });
-        
+
         // Reload user data first to ensure latest profile picture is cached
         await loadUserData();
-        
+
         // Then reload the prayer feed to get updated responses with correct display picture
         await loadPrayerFeed();
       } else {
@@ -677,7 +681,7 @@ export default function PrayerScreen() {
         try {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
-        const errorData = await response.json();
+            const errorData = await response.json();
             errorMessage = errorData.message || errorData.error || errorMessage;
           } else {
             // Backend returned non-JSON (HTML/text)
@@ -706,7 +710,7 @@ export default function PrayerScreen() {
   const loadPrayerRequestDetails = async (requestId: number) => {
     try {
       const token = await SecureStore.getItemAsync('authToken');
-      
+
       if (!token) {
         return null;
       }
@@ -741,10 +745,10 @@ export default function PrayerScreen() {
       });
     } else {
       newExpanded.add(prayerId);
-      
+
       // Set loading state immediately when expanding
       setLoadingResponses(prev => new Set(prev).add(prayerId));
-      
+
       // Set a timeout to clear loading state after 10 seconds (fallback)
       const loadingTimeout = setTimeout(() => {
         setLoadingResponses(prev => {
@@ -753,17 +757,17 @@ export default function PrayerScreen() {
           return newSet;
         });
       }, 10000);
-      
+
       // Use different logic based on active tab
       if (activeTab === 'feed') {
         // Feed logic
         const prayer = prayerRequests.find(p => p.id === prayerId);
-        
+
         if (prayer && (!prayer.responses || prayer.responses.length === 0)) {
           try {
             const fullRequest = await loadPrayerRequestDetails(prayerId);
             if (fullRequest) {
-              setPrayerRequests(prev => 
+              setPrayerRequests(prev =>
                 prev.map(p => p.id === prayerId ? { ...p, responses: fullRequest.responses } : p)
               );
             }
@@ -798,12 +802,12 @@ export default function PrayerScreen() {
       } else if (activeTab === 'my-prayers') {
         // My Prayers logic - exact same as feed but for myPrayerRequests
         const prayer = myPrayerRequests.find(p => p.id === prayerId);
-        
+
         if (prayer && (!prayer.responses || prayer.responses.length === 0)) {
           try {
             const fullRequest = await loadPrayerRequestDetails(prayerId);
             if (fullRequest) {
-              setMyPrayerRequests(prev => 
+              setMyPrayerRequests(prev =>
                 prev.map(p => p.id === prayerId ? { ...p, responses: fullRequest.responses } : p)
               );
             }
@@ -837,7 +841,7 @@ export default function PrayerScreen() {
         }
       }
     }
-    
+
     setExpandedPrayers(newExpanded);
   };
 
@@ -858,7 +862,7 @@ export default function PrayerScreen() {
             try {
               showLoading('Deleting prayer...');
               const token = await SecureStore.getItemAsync('authToken');
-              
+
               if (!token) {
                 showAlert('Error', 'Authentication required', 'error');
                 return;
@@ -874,11 +878,11 @@ export default function PrayerScreen() {
 
               if (response.ok) {
                 showAlert('Success', 'Prayer request deleted successfully!', 'success');
-                
+
                 // Remove from local state immediately for better UX
                 setPrayerRequests(prev => prev.filter(p => p.id !== prayerId));
                 setMyPrayerRequests(prev => prev.filter(p => p.id !== prayerId));
-                
+
                 // Reload lists to ensure sync with backend
                 if (activeTab === 'feed') {
                   await loadPrayerFeed();
@@ -926,7 +930,7 @@ export default function PrayerScreen() {
     const date = new Date(dateString);
     const now = new Date();
     const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInHours < 48) return 'Yesterday';
@@ -956,17 +960,17 @@ export default function PrayerScreen() {
   // View More functionality
   const shouldShowViewMore = (content: string) => {
     if (!content) return false;
-    
+
     // Estimate text height based on content length and line height
     const lineHeight = 20; // Based on prayerDescription lineHeight
     const maxWidth = width - 80; // Account for padding
     const charsPerLine = Math.floor(maxWidth / 12); // Approximate characters per line
     const estimatedLines = Math.ceil(content.length / charsPerLine);
     const estimatedHeight = estimatedLines * lineHeight;
-    
+
     // Show "View More" if content would exceed 3 lines (60px with 20px line height)
     const maxHeight = 60; // 3 lines * 20px line height
-    
+
     return estimatedHeight > maxHeight;
   };
 
@@ -1014,7 +1018,7 @@ export default function PrayerScreen() {
         {response.message && (
           <Text style={styles.commentMessage}>{response.message}</Text>
         )}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.replyButton}
           onPress={() => openReplyModal(response)}
         >
@@ -1036,159 +1040,159 @@ export default function PrayerScreen() {
     if (shouldShowDelete) {
       console.log('✅ Should show delete button for prayer:', item.id, 'User ID:', userData.userId, 'Author ID:', item.author_id);
     }
-    
+
     return (
-    <View style={styles.prayerCardWrapper}>
-      <View style={styles.prayerCard}>
-        <View style={styles.prayerHeader}>
-          <View style={styles.prayerAuthor}>
-          {item.display_picture ? (
-            <Image source={{ uri: item.display_picture }} style={styles.authorAvatar} />
-          ) : (
-              <View style={styles.authorAvatarPlaceholder}>
-                <Ionicons name="person" size={20} color={WHITE} />
-              </View>
-            )}
-            <View style={styles.authorInfo}>
-              <Text style={styles.authorName}>
-                {item.is_anonymous ? 'Anonymous' : (item.display_name || item.author_name || 'Unknown User')}
-              </Text>
-              <View style={styles.authorMeta}>
-                <Text style={styles.prayerTime}>{formatDate(item.created_at)}</Text>
+      <View style={styles.prayerCardWrapper}>
+        <View style={styles.prayerCard}>
+          <View style={styles.prayerHeader}>
+            <View style={styles.prayerAuthor}>
+              {item.display_picture ? (
+                <Image source={{ uri: item.display_picture }} style={styles.authorAvatar} />
+              ) : (
+                <View style={styles.authorAvatarPlaceholder}>
+                  <Ionicons name="person" size={20} color={WHITE} />
+                </View>
+              )}
+              <View style={styles.authorInfo}>
+                <Text style={styles.authorName}>
+                  {item.is_anonymous ? 'Anonymous' : (item.display_name || item.author_name || 'Unknown User')}
+                </Text>
+                <View style={styles.authorMeta}>
+                  <Text style={styles.prayerTime}>{formatDate(item.created_at)}</Text>
+                </View>
               </View>
             </View>
-          </View>
-        <View style={styles.prayerMeta}>
-          {item.is_urgent && (
-            <View style={styles.urgentBadge}>
-              <Ionicons name="flash" size={12} color={WHITE} />
-              <Text style={styles.urgentText}>Urgent</Text>
+            <View style={styles.prayerMeta}>
+              {item.is_urgent && (
+                <View style={styles.urgentBadge}>
+                  <Ionicons name="flash" size={12} color={WHITE} />
+                  <Text style={styles.urgentText}>Urgent</Text>
+                </View>
+              )}
+              <View style={styles.categoryBadge}>
+                <Ionicons name={getCategoryIcon(item.category) as any} size={12} color={WHITE} />
+                <Text style={styles.categoryText}>{item.category}</Text>
+              </View>
+              {/* Delete button - only show for user's own prayers */}
+              {userData && item.author_id === userData.userId && (
+                <TouchableOpacity
+                  style={styles.deletePrayerButton}
+                  onPress={() => {
+                    console.log('🗑️ Delete button pressed for prayer:', item.id, item.title);
+                    handleDeletePrayer(item.id, item.title);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#F44336" />
+                </TouchableOpacity>
+              )}
             </View>
-          )}
-          <View style={styles.categoryBadge}>
-            <Ionicons name={getCategoryIcon(item.category) as any} size={12} color={WHITE} />
-            <Text style={styles.categoryText}>{item.category}</Text>
           </View>
-          {/* Delete button - only show for user's own prayers */}
-          {userData && item.author_id === userData.userId && (
+
+          <Text style={styles.prayerTitle}>{item.title}</Text>
+          <Text style={styles.prayerDescription} numberOfLines={3}>
+            {item.description}
+          </Text>
+          {shouldShowViewMore(item.description) && (
             <TouchableOpacity
-              style={styles.deletePrayerButton}
-              onPress={() => {
-                console.log('🗑️ Delete button pressed for prayer:', item.id, item.title);
-                handleDeletePrayer(item.id, item.title);
-              }}
+              style={styles.viewMoreButton}
+              onPress={() => openViewMore(item.title, item.description)}
             >
-              <Ionicons name="trash-outline" size={16} color="#F44336" />
+              <Text style={styles.viewMoreText}>View More</Text>
             </TouchableOpacity>
           )}
-        </View>
-      </View>
-      
-      <Text style={styles.prayerTitle}>{item.title}</Text>
-      <Text style={styles.prayerDescription} numberOfLines={3}>
-        {item.description}
-      </Text>
-      {shouldShowViewMore(item.description) && (
-        <TouchableOpacity 
-          style={styles.viewMoreButton}
-          onPress={() => openViewMore(item.title, item.description)}
-        >
-          <Text style={styles.viewMoreText}>View More</Text>
-        </TouchableOpacity>
-      )}
-      
-      
-      <View style={styles.prayerActions}>
-        <TouchableOpacity 
-          style={[
-            styles.commentsButton,
-            loadingResponses.has(item.id) && styles.commentsButtonLoading
-          ]}
-          onPress={async () => {
-            // Prevent multiple rapid clicks
-            if (loadingResponses.has(item.id)) {
-              return;
-            }
-            
-            await togglePrayerExpansion(item.id);
-          }}
-        >
-          <Ionicons 
-            name={loadingResponses.has(item.id) ? "hourglass-outline" : "chatbubble-outline"} 
-            size={16} 
-            color={loadingResponses.has(item.id) ? PRIMARY_COLOR : DARK_GRAY} 
-          />
-          <Text style={[
-            styles.commentsButtonText,
-            loadingResponses.has(item.id) && styles.commentsButtonTextLoading
-          ]}>
-            {loadingResponses.has(item.id) 
-              ? 'Loading...'
-              : item.responses && item.responses.length > 0 
-                ? `${countAllResponses(item.responses)} ${countAllResponses(item.responses) === 1 ? 'response' : 'responses'}`
-                : `${item.response_count} ${item.response_count === 1 ? 'response' : 'responses'}`
-            }
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.respondButton}
-          onPress={() => openResponseModal(item)}
-        >
-          <Ionicons name="heart" size={16} color={WHITE} />
-          <Text style={styles.respondButtonText}>Pray & Respond</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Comments Section */}
-      {expandedPrayers.has(item.id) && (
-        <View style={styles.commentsSection}>
-          {loadingResponses.has(item.id) ? (
-            <View style={styles.commentsLoadingContainer}>
-              <Text style={styles.commentsTitle}>Loading Responses...</Text>
-              <View style={styles.loadingIndicator}>
-                <Ionicons name="hourglass-outline" size={24} color={PRIMARY_COLOR} />
-                <Text style={styles.loadingText}>Please wait while we load the responses</Text>
-              </View>
-              {[1, 2, 3].map((index) => (
-                <View key={index} style={styles.commentSkeleton}>
-                  <ShimmerEffect style={styles.skeletonAvatar}>
-                    <View style={styles.skeletonAvatar} />
-                  </ShimmerEffect>
-                  <View style={styles.skeletonContent}>
-                    <View style={styles.skeletonHeader}>
-                      <ShimmerEffect style={styles.skeletonName}>
-                        <View style={styles.skeletonName} />
-                      </ShimmerEffect>
-                      <ShimmerEffect style={styles.skeletonTime}>
-                        <View style={styles.skeletonTime} />
-                      </ShimmerEffect>
-                    </View>
-                    <ShimmerEffect style={styles.skeletonMessage}>
-                      <View style={styles.skeletonMessage} />
-                    </ShimmerEffect>
-                    <ShimmerEffect style={styles.skeletonMessageShort}>
-                      <View style={styles.skeletonMessageShort} />
-                    </ShimmerEffect>
+
+          <View style={styles.prayerActions}>
+            <TouchableOpacity
+              style={[
+                styles.commentsButton,
+                loadingResponses.has(item.id) && styles.commentsButtonLoading
+              ]}
+              onPress={async () => {
+                // Prevent multiple rapid clicks
+                if (loadingResponses.has(item.id)) {
+                  return;
+                }
+
+                await togglePrayerExpansion(item.id);
+              }}
+            >
+              <Ionicons
+                name={loadingResponses.has(item.id) ? "hourglass-outline" : "chatbubble-outline"}
+                size={16}
+                color={loadingResponses.has(item.id) ? PRIMARY_COLOR : DARK_GRAY}
+              />
+              <Text style={[
+                styles.commentsButtonText,
+                loadingResponses.has(item.id) && styles.commentsButtonTextLoading
+              ]}>
+                {loadingResponses.has(item.id)
+                  ? 'Loading...'
+                  : item.responses && item.responses.length > 0
+                    ? `${countAllResponses(item.responses)} ${countAllResponses(item.responses) === 1 ? 'response' : 'responses'}`
+                    : `${item.response_count} ${item.response_count === 1 ? 'response' : 'responses'}`
+                }
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.respondButton}
+              onPress={() => openResponseModal(item)}
+            >
+              <Ionicons name="heart" size={16} color={WHITE} />
+              <Text style={styles.respondButtonText}>Pray & Respond</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Comments Section */}
+          {expandedPrayers.has(item.id) && (
+            <View style={styles.commentsSection}>
+              {loadingResponses.has(item.id) ? (
+                <View style={styles.commentsLoadingContainer}>
+                  <Text style={styles.commentsTitle}>Loading Responses...</Text>
+                  <View style={styles.loadingIndicator}>
+                    <Ionicons name="hourglass-outline" size={24} color={PRIMARY_COLOR} />
+                    <Text style={styles.loadingText}>Please wait while we load the responses</Text>
                   </View>
+                  {[1, 2, 3].map((index) => (
+                    <View key={index} style={styles.commentSkeleton}>
+                      <ShimmerEffect style={styles.skeletonAvatar}>
+                        <View style={styles.skeletonAvatar} />
+                      </ShimmerEffect>
+                      <View style={styles.skeletonContent}>
+                        <View style={styles.skeletonHeader}>
+                          <ShimmerEffect style={styles.skeletonName}>
+                            <View style={styles.skeletonName} />
+                          </ShimmerEffect>
+                          <ShimmerEffect style={styles.skeletonTime}>
+                            <View style={styles.skeletonTime} />
+                          </ShimmerEffect>
+                        </View>
+                        <ShimmerEffect style={styles.skeletonMessage}>
+                          <View style={styles.skeletonMessage} />
+                        </ShimmerEffect>
+                        <ShimmerEffect style={styles.skeletonMessageShort}>
+                          <View style={styles.skeletonMessageShort} />
+                        </ShimmerEffect>
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          ) : item.responses && item.responses.length > 0 ? (
-            <>
-              <Text style={styles.commentsTitle}>Responses ({countAllResponses(item.responses)})</Text>
-              {item.responses.map((response) => renderResponse(response))}
-            </>
-          ) : (
-            <View style={styles.noResponses}>
-              <Ionicons name="chatbubble-outline" size={24} color={BLACK} />
-              <Text style={styles.noResponsesText}>No responses yet</Text>
+              ) : item.responses && item.responses.length > 0 ? (
+                <>
+                  <Text style={styles.commentsTitle}>Responses ({countAllResponses(item.responses)})</Text>
+                  {item.responses.map((response) => renderResponse(response))}
+                </>
+              ) : (
+                <View style={styles.noResponses}>
+                  <Ionicons name="chatbubble-outline" size={24} color={BLACK} />
+                  <Text style={styles.noResponsesText}>No responses yet</Text>
+                </View>
+              )}
             </View>
           )}
         </View>
-      )}
       </View>
-    </View>
     );
   };
 
@@ -1201,7 +1205,7 @@ export default function PrayerScreen() {
       <Text style={styles.emptyStateMessage}>
         Be the first to share a prayer request and inspire others in the community to pray together.
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.emptyStateButton}
         onPress={() => setShowCreateModal(true)}
       >
@@ -1221,7 +1225,7 @@ export default function PrayerScreen() {
         <Text style={styles.emptyStateMessage}>
           Share your prayer requests and let the community support you in prayer. Every prayer matters.
         </Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.emptyStateButton}
           onPress={() => setShowCreateModal(true)}
         >
@@ -1352,7 +1356,7 @@ export default function PrayerScreen() {
             <Text style={styles.headerTitle}>Live Prayer</Text>
             <Text style={styles.headerSubtitle}>Pray together, grow together</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.createButton}
             onPress={() => setShowCreateModal(true)}
           >
@@ -1368,7 +1372,7 @@ export default function PrayerScreen() {
           >
             <Ionicons name="home" size={20} color={activeTab === 'feed' ? WHITE : 'rgba(255,255,255,0.6)'} />
             <Text style={[styles.tabText, activeTab === 'feed' && styles.activeTabText]}>Feed</Text>
-            </TouchableOpacity>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'my-prayers' && styles.activeTab]}
             onPress={() => {
@@ -1381,7 +1385,7 @@ export default function PrayerScreen() {
           >
             <Ionicons name="person" size={20} color={activeTab === 'my-prayers' ? WHITE : 'rgba(255,255,255,0.6)'} />
             <Text style={[styles.tabText, activeTab === 'my-prayers' && styles.activeTabText]}>My Prayers</Text>
-            </TouchableOpacity>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'stats' && styles.activeTab]}
             onPress={() => {
@@ -1391,8 +1395,8 @@ export default function PrayerScreen() {
           >
             <Ionicons name="stats-chart" size={20} color={activeTab === 'stats' ? WHITE : 'rgba(255,255,255,0.6)'} />
             <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>Stats</Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
+        </View>
 
         {/* Content */}
         <View style={styles.content}>
@@ -1410,7 +1414,7 @@ export default function PrayerScreen() {
               style={{ flex: 1 }}
             />
           )}
-          
+
           {activeTab === 'my-prayers' && (
             <FlatList
               data={myPrayerRequests}
@@ -1425,7 +1429,7 @@ export default function PrayerScreen() {
               style={{ flex: 1 }}
             />
           )}
-          
+
           {activeTab === 'stats' && renderStats()}
         </View>
 
@@ -1438,8 +1442,12 @@ export default function PrayerScreen() {
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <Ionicons name="close" size={24} color={DARK_GRAY} />
+              <TouchableOpacity
+                onPress={() => setShowCreateModal(false)}
+                style={{ padding: 8 }}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              >
+                <Ionicons name="close" size={30} color={DARK_GRAY} />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Create Prayer Request</Text>
               <View style={{ width: 24 }} />
@@ -1477,26 +1485,26 @@ export default function PrayerScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Category</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {prayerCategories.map((category) => (
-              <TouchableOpacity
+                  {prayerCategories.map((category) => (
+                    <TouchableOpacity
                       key={category.value}
-                style={[
+                      style={[
                         styles.categoryChip,
                         newRequest.category === category.value && styles.selectedCategoryChip
-                ]}
+                      ]}
                       onPress={() => setNewRequest({ ...newRequest, category: category.value })}
-              >
-                <Ionicons 
-                  name={category.icon as any} 
-                        size={16} 
-                        color={newRequest.category === category.value ? WHITE : DARK_GRAY} 
-                />
-                <Text style={[
+                    >
+                      <Ionicons
+                        name={category.icon as any}
+                        size={16}
+                        color={newRequest.category === category.value ? WHITE : DARK_GRAY}
+                      />
+                      <Text style={[
                         styles.categoryChipText,
                         newRequest.category === category.value && styles.selectedCategoryChipText
-                ]}>
+                      ]}>
                         {category.label}
-                </Text>
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -1510,18 +1518,18 @@ export default function PrayerScreen() {
                   style={styles.toggleItem}
                   onPress={() => {
                     const newAnonymous = !newRequest.isAnonymous;
-                    setNewRequest({ 
-                      ...newRequest, 
+                    setNewRequest({
+                      ...newRequest,
                       isAnonymous: newAnonymous,
                       // If posting anonymously, automatically make it public
                       isPublic: newAnonymous ? true : newRequest.isPublic
                     });
                   }}
                 >
-                  <Ionicons 
-                    name={newRequest.isAnonymous ? "checkmark-circle" : "ellipse-outline"} 
-                    size={20} 
-                    color={newRequest.isAnonymous ? PRIMARY_COLOR : DARK_GRAY} 
+                  <Ionicons
+                    name={newRequest.isAnonymous ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={newRequest.isAnonymous ? PRIMARY_COLOR : DARK_GRAY}
                   />
                   <Text style={styles.toggleText}>Post anonymously</Text>
                 </TouchableOpacity>
@@ -1530,10 +1538,10 @@ export default function PrayerScreen() {
                   style={styles.toggleItem}
                   onPress={() => setNewRequest({ ...newRequest, isUrgent: !newRequest.isUrgent })}
                 >
-                  <Ionicons 
-                    name={newRequest.isUrgent ? "checkmark-circle" : "ellipse-outline"} 
-                    size={20} 
-                    color={newRequest.isUrgent ? SECONDARY_COLOR : DARK_GRAY} 
+                  <Ionicons
+                    name={newRequest.isUrgent ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={newRequest.isUrgent ? SECONDARY_COLOR : DARK_GRAY}
                   />
                   <Text style={styles.toggleText}>Mark as urgent</Text>
                 </TouchableOpacity>
@@ -1550,19 +1558,19 @@ export default function PrayerScreen() {
                     }
                   }}
                 >
-                  <Ionicons 
-                    name={newRequest.isPublic ? "checkmark-circle" : "ellipse-outline"} 
-                    size={20} 
-                    color={newRequest.isAnonymous ? SOFT_GRAY : (newRequest.isPublic ? "#4CAF50" : DARK_GRAY)} 
+                  <Ionicons
+                    name={newRequest.isPublic ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={newRequest.isAnonymous ? SOFT_GRAY : (newRequest.isPublic ? "#4CAF50" : DARK_GRAY)}
                   />
-                <Text style={[
+                  <Text style={[
                     styles.toggleText,
                     newRequest.isAnonymous && styles.disabledToggleText
-                ]}>
+                  ]}>
                     Make public {newRequest.isAnonymous && "(auto-enabled for anonymous)"}
-                </Text>
-              </TouchableOpacity>
-          </View>
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1570,7 +1578,7 @@ export default function PrayerScreen() {
                 <Text style={styles.formStatusText}>
                   Title: {newRequest.title ? '✓' : '✗'} | Description: {newRequest.description ? '✓' : '✗'}
                 </Text>
-        </View>
+              </View>
               <TouchableOpacity
                 style={[
                   styles.createButtonLarge,
@@ -1616,21 +1624,21 @@ export default function PrayerScreen() {
                         ]}
                         onPress={() => setResponseData({ ...responseData, responseType: type.value as any })}
                       >
-                        <Ionicons 
-                          name={type.icon as any} 
-                          size={24} 
-                          color={responseData.responseType === type.value ? WHITE : type.color} 
+                        <Ionicons
+                          name={type.icon as any}
+                          size={24}
+                          color={responseData.responseType === type.value ? WHITE : type.color}
                         />
-                <Text style={[
+                        <Text style={[
                           styles.responseTypeText,
                           responseData.responseType === type.value && styles.selectedResponseTypeText
-                ]}>
+                        ]}>
                           {type.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Message *</Text>
@@ -1643,19 +1651,19 @@ export default function PrayerScreen() {
                     multiline
                     numberOfLines={6}
                   />
-            </View>
+                </View>
 
                 <TouchableOpacity
                   style={styles.toggleItem}
                   onPress={() => setResponseData({ ...responseData, isAnonymous: !responseData.isAnonymous })}
                 >
-                  <Ionicons 
-                    name={responseData.isAnonymous ? "checkmark-circle" : "ellipse-outline"} 
-                    size={20} 
-                    color={responseData.isAnonymous ? PRIMARY_COLOR : DARK_GRAY} 
+                  <Ionicons
+                    name={responseData.isAnonymous ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={responseData.isAnonymous ? PRIMARY_COLOR : DARK_GRAY}
                   />
                   <Text style={styles.toggleText}>Respond anonymously</Text>
-              </TouchableOpacity>
+                </TouchableOpacity>
               </ScrollView>
             )}
 
@@ -1672,7 +1680,7 @@ export default function PrayerScreen() {
                 <Text style={styles.createButtonText}>Send Response</Text>
               </TouchableOpacity>
             </View>
-        </View>
+          </View>
         </Modal>
 
         {/* Reply Modal */}
@@ -1695,7 +1703,7 @@ export default function PrayerScreen() {
                 >
                   <Ionicons name="close" size={24} color={WHITE} />
                 </TouchableOpacity>
-            </View>
+              </View>
 
               {selectedResponse && (
                 <View style={styles.replyPreview}>
@@ -1733,7 +1741,7 @@ export default function PrayerScreen() {
                         ]}>
                           {type.label}
                         </Text>
-              </TouchableOpacity>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 </View>
@@ -1760,7 +1768,7 @@ export default function PrayerScreen() {
                       {replyData.isAnonymous && <Ionicons name="checkmark" size={16} color={WHITE} />}
                     </View>
                     <Text style={styles.toggleText}>Reply anonymously</Text>
-              </TouchableOpacity>
+                  </TouchableOpacity>
                 </View>
               </ScrollView>
 
@@ -1771,11 +1779,11 @@ export default function PrayerScreen() {
                 >
                   <Ionicons name="arrow-undo" size={20} color={WHITE} />
                   <Text style={styles.createButtonText}>Send Reply</Text>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             </View>
-        </View>
-            </LinearGradient>
-          </Modal>
+          </LinearGradient>
+        </Modal>
 
         {/* Custom Alert Modal */}
         <Modal
@@ -1788,13 +1796,13 @@ export default function PrayerScreen() {
             <View style={styles.alertContainer}>
               <LinearGradient
                 colors={
-                  alertData.type === 'success' 
+                  alertData.type === 'success'
                     ? ['#4CAF50', '#45a049']
                     : alertData.type === 'error'
-                    ? ['#f44336', '#d32f2f']
-                    : alertData.type === 'warning'
-                    ? ['#ff9800', '#f57c00']
-                    : ['#2196F3', '#1976D2']
+                      ? ['#f44336', '#d32f2f']
+                      : alertData.type === 'warning'
+                        ? ['#ff9800', '#f57c00']
+                        : ['#2196F3', '#1976D2']
                 }
                 style={styles.alertGradient}
               >
@@ -1802,22 +1810,22 @@ export default function PrayerScreen() {
                   <View style={styles.alertIconContainer}>
                     <Ionicons
                       name={
-                        alertData.type === 'success' 
+                        alertData.type === 'success'
                           ? 'checkmark-circle'
                           : alertData.type === 'error'
-                          ? 'close-circle'
-                          : alertData.type === 'warning'
-                          ? 'warning'
-                          : 'information-circle'
+                            ? 'close-circle'
+                            : alertData.type === 'warning'
+                              ? 'warning'
+                              : 'information-circle'
                       }
                       size={48}
                       color={WHITE}
                     />
                   </View>
-                  
+
                   <Text style={styles.alertTitle}>{alertData.title}</Text>
                   <Text style={styles.alertMessage}>{alertData.message}</Text>
-                  
+
                   <TouchableOpacity
                     style={styles.alertButton}
                     onPress={() => {
@@ -1849,11 +1857,11 @@ export default function PrayerScreen() {
                 </Text>
                 <TouchableOpacity onPress={closeViewMore} style={styles.viewMoreModalSimpleCloseButton}>
                   <Ionicons name="close-circle" size={32} color={PRIMARY_COLOR} />
-                  </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
+              </View>
 
               {/* Content */}
-              <ScrollView 
+              <ScrollView
                 style={styles.viewMoreModalSimpleContent}
                 contentContainerStyle={styles.viewMoreModalSimpleContentContainer}
                 showsVerticalScrollIndicator={true}
@@ -1861,11 +1869,11 @@ export default function PrayerScreen() {
                 <Text style={styles.viewMoreModalSimpleText}>
                   {viewMoreContent || 'No content available'}
                 </Text>
-                </ScrollView>
+              </ScrollView>
             </View>
           </SafeAreaView>
         </Modal>
-            </LinearGradient>
+      </LinearGradient>
     </SafeAreaView>
   );
 }
@@ -1943,7 +1951,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   listContainer: {
-    paddingBottom: 20,
+    paddingBottom: 120,
   },
   prayerCardWrapper: {
     width: '100%',
@@ -2778,7 +2786,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
-  
+
   // Custom Alert Styles
   alertOverlay: {
     flex: 1,
@@ -2837,7 +2845,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  
+
   // View More Button Styles
   viewMoreButton: {
     marginTop: 8,
@@ -2849,7 +2857,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  
+
   // View More Modal Styles
   // View More Modal - Simplified Styles
   viewMoreModalSafeArea: {
@@ -2887,7 +2895,7 @@ const styles = StyleSheet.create({
   },
   viewMoreModalSimpleContentContainer: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   viewMoreModalSimpleText: {
     fontSize: 16,

@@ -1,15 +1,18 @@
 import { API_ENDPOINTS } from '@/constants/API';
-import { queryGemini } from '@/utils/gemini';
-import NotificationService from '@/utils/notifications';
 import AppSessionTracker from '@/utils/appSessionTracker';
+import NotificationService from '@/utils/notifications';
+import { queryOpenAI } from '@/utils/openai';
+import { safeJsonParse } from '@/utils/safeJson';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -21,6 +24,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const PRIMARY_COLOR = '#7b4d62';
 const SECONDARY_COLOR = '#ce703f';
@@ -149,7 +153,29 @@ export default function ChatScreen() {
   const [journeyProgress, setJourneyProgress] = useState<JourneyDay[]>([]);
   const [journeyIteration, setJourneyIteration] = useState<number>(1); // Track journey cycles
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
+
+  // Tab bar is hidden, so we just need to respect safe area
+  // Reduced buffer to maximize chat space
+  const inputPaddingBottom = isKeyboardVisible ? 10 : Math.max(10, insets.bottom + 2);
+
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, []);
 
   // Load user profile and journey progress on mount
   useEffect(() => {
@@ -174,6 +200,28 @@ export default function ChatScreen() {
 
   const loadUserProfile = async () => {
     try {
+      // 1. Try to load from local cache first to avoid API rate limits
+      const cachedData = await SecureStore.getItemAsync('userData');
+      if (cachedData) {
+        try {
+          const userData = safeJsonParse(cachedData, null);
+          if (userData) {
+            const profile: UserProfile = {
+              bibleVersion: userData.bibleVersion || userData.bible_version || 'NIV',
+              denomination: userData.denomination || 'Christian',
+              ageGroup: userData.ageGroup || userData.age_group || '',
+              name: userData.name || 'friend'
+            };
+            console.log('✅ Chat - Loaded profile from cache (skipping API)');
+            setUserProfile(profile);
+            setLoadingProfile(false);
+            return;
+          }
+        } catch (e) {
+          console.log('⚠️ Chat - Cache parse error, falling back to API');
+        }
+      }
+
       const token = await SecureStore.getItemAsync('authToken');
       if (!token) {
         console.log('❌ Chat - No auth token found');
@@ -194,18 +242,18 @@ export default function ChatScreen() {
       if (response.ok) {
         const result = await response.json();
         console.log('📦 Chat - Profile API response:', JSON.stringify(result, null, 2));
-        
+
         // Handle different API response structures
         // API returns: { success: true, user: { bible_version: "BBE", ... } }
         const userData = result.user || result.data || result;
-        
+
         const profile: UserProfile = {
           bibleVersion: userData.bible_version || userData.bibleVersion || 'NIV',
           denomination: userData.denomination || 'Christian',
           ageGroup: userData.age_group || userData.ageGroup || '',
           name: userData.name || 'friend'
         };
-        
+
         console.log('✅ Chat - Loaded user profile:', profile);
         console.log('📖 Chat - Bible version is now:', profile.bibleVersion);
         setUserProfile(profile);
@@ -215,26 +263,28 @@ export default function ChatScreen() {
       }
     } catch (error) {
       console.error('❌ Chat - Error loading profile:', error);
-      
+
       // Try to load from cached userData as fallback
       try {
         const userDataString = await SecureStore.getItemAsync('userData');
         if (userDataString) {
-          const userData = JSON.parse(userDataString);
-          const profile: UserProfile = {
-            bibleVersion: userData.bibleVersion || userData.bible_version || 'NIV',
-            denomination: userData.denomination || 'Christian',
-            ageGroup: userData.ageGroup || userData.age_group || '',
-            name: userData.name || 'friend'
-          };
-          console.log('✅ Chat - Loaded profile from cached userData:', profile);
-          setUserProfile(profile);
-          return;
+          const userData = safeJsonParse(userDataString, null);
+          if (userData) {
+            const profile: UserProfile = {
+              bibleVersion: userData.bibleVersion || userData.bible_version || 'NIV',
+              denomination: userData.denomination || 'Christian',
+              ageGroup: userData.ageGroup || userData.age_group || '',
+              name: userData.name || 'friend'
+            };
+            console.log('✅ Chat - Loaded profile from cached userData:', profile);
+            setUserProfile(profile);
+            return;
+          }
         }
       } catch (cacheError) {
         console.error('❌ Chat - Error loading cached userData:', cacheError);
       }
-      
+
       // Final fallback to default profile
       console.log('⚠️ Chat - Using default profile');
       setUserProfile({
@@ -252,9 +302,9 @@ export default function ChatScreen() {
     try {
       const stored = await SecureStore.getItemAsync('journeyProgress');
       if (stored) {
-        const progress = JSON.parse(stored);
+        const progress = safeJsonParse(stored, []);
         setJourneyProgress(progress);
-        
+
         // Find current day (first incomplete day)
         const currentDay = progress.find((day: JourneyDay) => !day.completed);
         if (currentDay) {
@@ -291,9 +341,9 @@ export default function ChatScreen() {
     try {
       const storageKey = `journey_${journeyIteration}_day_${day}_messages`;
       const stored = await SecureStore.getItemAsync(storageKey);
-      
+
       if (stored) {
-        const storedMessages = JSON.parse(stored);
+        const storedMessages = safeJsonParse(stored, []);
         // Convert timestamp strings back to Date objects
         const messagesWithDates = storedMessages.map((msg: any) => ({
           ...msg,
@@ -322,7 +372,7 @@ export default function ChatScreen() {
   const initializeWelcomeMessage = (dayNumber?: number) => {
     const targetDay = dayNumber || currentJourneyDay;
     const currentDay = journeyProgress.find(day => day.day === targetDay);
-    
+
     // Create different welcome messages for different journey iterations
     const getIterationGreeting = () => {
       if (journeyIteration === 1) {
@@ -334,7 +384,7 @@ export default function ChatScreen() {
       }
     };
 
-    const welcomeText = currentDay 
+    const welcomeText = currentDay
       ? `${journeyIteration > 1 ? '🔄 ' : ''}Welcome ${journeyIteration > 1 ? 'back ' : ''}to Day ${currentDay.day}: ${currentDay.theme}! 
 
 ${journeyIteration > 1 ? `This time, let's explore "${currentDay.focus}" from a fresh perspective.` : `Today's focus is "${currentDay.focus}".`}
@@ -377,17 +427,17 @@ Let's begin this journey together. What's on your heart today?`;
 
     // Track AI chat activity
     const sessionTracker = AppSessionTracker.getInstance();
-    sessionTracker.trackActivity('ai_chat_message', 5, {
+    sessionTracker.trackActivity('ai_chat', 5, {
       messageLength: text.trim().length,
       journeyDay: currentJourneyDay,
     });
 
     try {
       const currentDay = journeyProgress.find(day => day.day === currentJourneyDay);
-      
+
       // Create conversation context from recent messages
       const recentMessages = messages.slice(-6); // Last 6 messages for context
-      const conversationContext = recentMessages.map(msg => 
+      const conversationContext = recentMessages.map(msg =>
         `${msg.isUser ? 'User' : 'Companion'}: ${msg.text}`
       ).join('\n');
 
@@ -426,8 +476,8 @@ TONE: Conversational friend who deeply understands Christian faith, speaks with 
 
 Remember: This is an intimate spiritual conversation, not a sermon. Be present, genuine, and supportive.`;
 
-      const response = await queryGemini(enhancedPrompt);
-      
+      const response = await queryOpenAI(enhancedPrompt);
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: response,
@@ -438,7 +488,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
 
       const updatedMessages = [...messages, userMessage, aiMessage];
       setMessages(updatedMessages);
-      
+
       // Save messages to local storage
       await saveMessagesForDay(currentJourneyDay, updatedMessages);
     } catch (error) {
@@ -450,7 +500,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
       };
       const updatedMessages = [...messages, userMessage, errorMessage];
       setMessages(updatedMessages);
-      
+
       // Save even error messages
       await saveMessagesForDay(currentJourneyDay, updatedMessages);
     } finally {
@@ -467,7 +517,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
   };
 
   const completeDay = async () => {
-    const updatedProgress = journeyProgress.map(day => 
+    const updatedProgress = journeyProgress.map(day =>
       day.day === currentJourneyDay ? { ...day, completed: true } : day
     );
     setJourneyProgress(updatedProgress);
@@ -479,18 +529,18 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
     if (currentJourneyDay < 7) {
       // Schedule reminder for next day
       await NotificationService.scheduleJourneyReminderNotification(currentJourneyDay + 1);
-      
+
       Alert.alert(
         'Day Complete! 🎉',
         `You've completed Day ${currentJourneyDay}! Ready to move to Day ${currentJourneyDay + 1}?`,
         [
           { text: 'Not Yet', style: 'cancel' },
-          { 
-            text: 'Continue Journey', 
+          {
+            text: 'Continue Journey',
             onPress: async () => {
               // Save current day messages
               await saveMessagesForDay(currentJourneyDay, messages);
-              
+
               const nextDay = currentJourneyDay + 1;
               setCurrentJourneyDay(nextDay);
               // Messages will be loaded by the useEffect
@@ -504,19 +554,19 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
         'You\'ve completed all 7 days! You can restart the journey or continue our conversation.',
         [
           { text: 'Keep Chatting', style: 'cancel' },
-          { 
-            text: 'Start Fresh Journey', 
+          {
+            text: 'Start Fresh Journey',
             onPress: async () => {
               // Increment journey iteration for a fresh experience
               const newIteration = journeyIteration + 1;
               setJourneyIteration(newIteration);
               await SecureStore.setItemAsync('journeyIteration', newIteration.toString());
-              
+
               // Reset progress for new journey
               const resetProgress = JOURNEY_DAYS.map(day => ({ ...day, completed: false }));
               setJourneyProgress(resetProgress);
               await SecureStore.setItemAsync('journeyProgress', JSON.stringify(resetProgress));
-              
+
               // Start at day 1
               setCurrentJourneyDay(1);
               // Messages will be loaded by the useEffect with new iteration
@@ -530,7 +580,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
   const isDayAccessible = (day: number): boolean => {
     // Day 1 is always accessible
     if (day === 1) return true;
-    
+
     // Check if previous day is completed
     const previousDay = journeyProgress.find(d => d.day === day - 1);
     return previousDay?.completed || false;
@@ -538,7 +588,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
 
   const navigateToDay = (day: number) => {
     if (day < 1 || day > 7) return;
-    
+
     // Check if user can access this day
     if (!isDayAccessible(day)) {
       Alert.alert(
@@ -548,12 +598,12 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
       );
       return;
     }
-    
+
     // Save current day's messages before switching
     if (messages.length > 0) {
       saveMessagesForDay(currentJourneyDay, messages);
     }
-    
+
     setCurrentJourneyDay(day);
     // Messages will be loaded by the useEffect
   };
@@ -589,17 +639,17 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header with Journey Day */}
         <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/')} style={{ marginRight: 12 }}>
+            <Ionicons name="arrow-back" size={24} color={DARK_GRAY} />
+          </TouchableOpacity>
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Faithful Companion</Text>
-            <Text style={styles.headerSubtitle}>
-              Day {currentJourneyDay}/7: {currentDay?.theme}
-            </Text>
+            <Text style={styles.headerTitle}>Your Companion</Text>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.bibleVersion}>{userProfile?.bibleVersion}</Text>
@@ -608,44 +658,44 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
         </View>
 
         {/* Journey Progress Bar */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              {[1, 2, 3, 4, 5, 6, 7].map((day) => {
-                const isAccessible = isDayAccessible(day);
-                const isCompleted = journeyProgress.find(d => d.day === day)?.completed;
-                const isActive = day === currentJourneyDay;
-                
-                return (
-                  <TouchableOpacity
-                    key={day}
-                    style={[
-                      styles.progressDot,
-                      isActive && styles.progressDotActive,
-                      isCompleted && styles.progressDotCompleted,
-                      !isAccessible && styles.progressDotLocked
-                    ]}
-                    onPress={() => navigateToDay(day)}
-                    disabled={!isAccessible}
-                  >
-                    {!isAccessible ? (
-                      <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.5)" />
-                    ) : (
-                      <Text style={[
-                        styles.progressDotText,
-                        isActive && styles.progressDotTextActive,
-                        isCompleted && styles.progressDotTextCompleted
-                      ]}>
-                        {day}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+              const isAccessible = isDayAccessible(day);
+              const isCompleted = journeyProgress.find(d => d.day === day)?.completed;
+              const isActive = day === currentJourneyDay;
+
+              return (
+                <TouchableOpacity
+                  key={day}
+                  style={[
+                    styles.progressDot,
+                    isActive && styles.progressDotActive,
+                    isCompleted && styles.progressDotCompleted,
+                    !isAccessible && styles.progressDotLocked
+                  ]}
+                  onPress={() => navigateToDay(day)}
+                  disabled={!isAccessible}
+                >
+                  {!isAccessible ? (
+                    <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.5)" />
+                  ) : (
+                    <Text style={[
+                      styles.progressDotText,
+                      isActive && styles.progressDotTextActive,
+                      isCompleted && styles.progressDotTextCompleted
+                    ]}>
+                      {day}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
+        </View>
 
         {/* Messages */}
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
           style={styles.messagesContainer}
           showsVerticalScrollIndicator={false}
@@ -659,11 +709,14 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
               ]}
             >
               <LinearGradient
-                colors={message.isUser 
-                  ? [SECONDARY_COLOR, PRIMARY_COLOR]
+                colors={message.isUser
+                  ? [PRIMARY_COLOR, PRIMARY_COLOR] // Solid color for user
                   : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']
                 }
-                style={styles.messageBubble}
+                style={[
+                  styles.messageBubble,
+                  message.isUser && { borderWidth: 0 } // Remove border for user messages
+                ]}
               >
                 <Text style={[
                   styles.messageText,
@@ -675,15 +728,15 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
                   styles.timestamp,
                   message.isUser ? styles.userTimestamp : styles.aiTimestamp
                 ]}>
-                  {message.timestamp.toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  {message.timestamp.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
                   })}
                 </Text>
               </LinearGradient>
             </View>
           ))}
-          
+
           {isLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={PRIMARY_COLOR} />
@@ -710,7 +763,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
               </ScrollView>
             </>
           )}
-          
+
           {messages.length > 2 && !journeyProgress.find(d => d.day === currentJourneyDay)?.completed && (
             <TouchableOpacity
               style={styles.completeDayButton}
@@ -723,7 +776,7 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
         </View>
 
         {/* Input */}
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: inputPaddingBottom }]}>
           <TextInput
             style={styles.textInput}
             value={inputText}
@@ -741,10 +794,10 @@ Remember: This is an intimate spiritual conversation, not a sermon. Be present, 
             onPress={handleSend}
             disabled={!inputText.trim() || isLoading}
           >
-            <Ionicons 
-              name="send" 
-              size={20} 
-              color={inputText.trim() ? WHITE : 'rgba(255,255,255,0.3)'} 
+            <Ionicons
+              name="send"
+              size={20}
+              color={inputText.trim() ? WHITE : 'rgba(255,255,255,0.3)'}
             />
           </TouchableOpacity>
         </View>
@@ -967,8 +1020,8 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: SOFT_GRAY,
   },

@@ -52,7 +52,7 @@ interface SessionResponse {
     todayTimeFormatted: string;          // human readable
     lastOpenedAt: string;
     averageSessionDuration?: number;
-    
+
     // Streak Data
     currentStreak: number;
     longestStreak: number;
@@ -62,16 +62,16 @@ interface SessionResponse {
     streakMessage: string;
     isNewStreak?: boolean;
     streakStartDate?: string;
-    
+
     // XP & Gamification
     totalXP: number;
     todayXP: number;
     level: number;
     xpToNextLevel: number;
-    
+
     // Daily Goals
     dailyGoals: DailyGoals;
-    
+
     // Milestone Achievements
     milestones: Milestone[];
   };
@@ -91,6 +91,20 @@ class AppSessionTracker {
   private constructor() {
     console.log('📱 AppSessionTracker initialized');
     this.loadRetryQueue(); // Load any previously failed sessions
+  }
+
+  /**
+   * Safely get timezone - fallback to UTC if Intl is not available
+   */
+  private getTimezone(): string {
+    try {
+      if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      }
+    } catch (error) {
+      console.warn('⚠️ Intl not available, using UTC timezone');
+    }
+    return 'UTC';
   }
 
   public static getInstance(): AppSessionTracker {
@@ -152,36 +166,36 @@ class AppSessionTracker {
     const oneHour = 60 * 60 * 1000;
     const lastRetryTime = await SecureStore.getItemAsync('lastRetryQueueProcess');
     const lastRetry = lastRetryTime ? parseInt(lastRetryTime) : 0;
-    
+
     if (now - lastRetry < oneHour) {
       console.log(`⏱️ Skipping retry queue - will retry in ${Math.round((oneHour - (now - lastRetry)) / 60000)} minutes`);
       return;
     }
 
     console.log(`🔄 Processing ${this.retryQueue.length} queued sessions...`);
-    
+
     const sessionsToRetry = [...this.retryQueue];
     this.retryQueue = [];
-    
+
     for (const sessionData of sessionsToRetry) {
       const success = await this.sendSessionToBackend(
         sessionData.durationSeconds,
         new Date(sessionData.sessionEndTime || Date.now()),
         sessionData.activities
       );
-      
+
       // If failed again, add back to queue (max 10 items)
       if (!success && this.retryQueue.length < 10) {
         this.retryQueue.push(sessionData);
       }
-      
+
       // Add delay between retries to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
     }
-    
+
     await this.saveRetryQueue();
     await SecureStore.setItemAsync('lastRetryQueueProcess', now.toString());
-    
+
     if (this.retryQueue.length > 0) {
       console.log(`⚠️ ${this.retryQueue.length} sessions still pending`);
     } else {
@@ -271,12 +285,12 @@ class AppSessionTracker {
 
       if (response.ok) {
         const result: SessionResponse = await response.json();
-        
+
         // Debug: Log the FULL response
         console.log('📦 FULL Backend Response (GET):', JSON.stringify(result.data, null, 2));
-        
+
         console.log('✅ Session data fetched successfully');
-        
+
         // Log Usage Statistics
         console.log('\n📊 USAGE STATISTICS:');
         console.log('=====================');
@@ -286,7 +300,7 @@ class AppSessionTracker {
         console.log('Today Time Spent (seconds):', result.data.todayTimeSpent);
         console.log('Today Time Spent (formatted):', result.data.todayTimeFormatted);
         console.log('Last Opened At:', result.data.lastOpenedAt);
-        
+
         // Log Streak Data
         console.log('\n🔥 STREAK DATA:');
         console.log('================');
@@ -296,7 +310,7 @@ class AppSessionTracker {
         console.log('Last Active Date:', result.data.lastActiveDate);
         console.log('Freezes Available:', result.data.freezesAvailable);
         console.log('Streak Message:', result.data.streakMessage);
-        
+
         // Log XP & Gamification
         console.log('\n⭐ XP & GAMIFICATION:');
         console.log('======================');
@@ -304,25 +318,25 @@ class AppSessionTracker {
         console.log('Today XP:', result.data.todayXP);
         console.log('Level:', result.data.level);
         console.log('XP to Next Level:', result.data.xpToNextLevel);
-        
+
         // Check if XP data is missing
         if (result.data.totalXP === undefined || result.data.level === undefined) {
           console.log('⚠️ WARNING: XP data is undefined! Backend may not be returning XP fields.');
           console.log('⚠️ Expected fields: totalXP, todayXP, level, xpToNextLevel');
         }
-        
+
         // Log Daily Goals
         if (result.data.dailyGoals) {
           console.log('\n🎯 DAILY GOALS:');
           console.log('================');
           console.log(`Progress: ${result.data.dailyGoals.completedGoals}/${result.data.dailyGoals.totalGoals} (${result.data.dailyGoals.progressPercentage}%)`);
-          console.log('Goals:', result.data.dailyGoals.goals.map(g => 
+          console.log('Goals:', result.data.dailyGoals.goals.map(g =>
             `${g.type}: ${g.completed ? '✅' : '❌'}`
           ).join(', '));
         } else {
           console.log('\n⚠️ WARNING: Daily goals data is undefined!');
         }
-        
+
         // Log Milestones
         if (result.data.milestones && result.data.milestones.length > 0) {
           console.log('\n🏅 MILESTONES:');
@@ -389,7 +403,7 @@ class AppSessionTracker {
       } else {
         console.log('⏱️ Rate limit: Queueing session for later sync');
         // Add to queue instead of sending immediately
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        const timezone = this.getTimezone();
         await this.addToRetryQueue({
           sessionStartTime: this.sessionStartTime.toISOString(),
           sessionEndTime: sessionEnd.toISOString(),
@@ -421,14 +435,14 @@ class AppSessionTracker {
         console.log('Background duration:', backgroundDuration, 'seconds');
         this.backgroundTime = null;
       }
-      
+
       // Start new session
       this.startSession();
     } else if (nextAppState === 'background' || nextAppState === 'inactive') {
       // App went to background
       console.log('🌙 App went to background');
       this.backgroundTime = new Date();
-      
+
       // End current session
       this.endSession();
     }
@@ -439,7 +453,7 @@ class AppSessionTracker {
    * Returns true if successful, false otherwise
    */
   private async sendSessionToBackend(
-    durationSeconds: number, 
+    durationSeconds: number,
     sessionEnd: Date,
     activities?: Activity[]
   ): Promise<boolean> {
@@ -450,7 +464,7 @@ class AppSessionTracker {
         return false;
       }
 
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const timezone = this.getTimezone();
       const sessionStart = this.sessionStartTime || new Date(sessionEnd.getTime() - (durationSeconds * 1000));
 
       const payload: SessionData = {
@@ -478,10 +492,10 @@ class AppSessionTracker {
 
       if (response.ok) {
         const result: SessionResponse = await response.json();
-        
+
         // Debug: Log the FULL response to see what we're actually getting
         console.log('📦 FULL Backend Response:', JSON.stringify(result.data, null, 2));
-        
+
         console.log('✅ Session tracked successfully');
         console.log('📊 Backend Response Summary:');
         console.log('  - Current Streak:', result.data.currentStreak, 'days');
@@ -493,7 +507,7 @@ class AppSessionTracker {
         console.log('  - XP to Next Level:', result.data.xpToNextLevel);
         console.log('  - Daily Goals:', `${result.data.dailyGoals?.completedGoals || 0}/${result.data.dailyGoals?.totalGoals || 0}`);
         console.log(`🔥 ${result.data.streakMessage}`);
-        
+
         if (result.data.isNewStreak) {
           console.log('🎉 NEW STREAK DAY! Keep going!');
         }
@@ -511,41 +525,41 @@ class AppSessionTracker {
 
         // Store the latest data in cache for offline use
         await this.cacheSessionData(result.data);
-        
+
         return true;
       } else {
         const errorText = await response.text();
-        
+
         // Handle rate limiting (429)
         if (response.status === 429) {
           console.error('⚠️ Rate limited (429) - session will be queued for retry');
           console.error('Error:', errorText);
-          
+
           // Add to retry queue for later
           await this.addToRetryQueue(payload);
           return false;
         }
-        
+
         // Handle other errors
         console.error('❌ Failed to track session:', response.status);
         console.error('Error:', errorText);
-        
+
         // For server errors (5xx), also queue for retry
         if (response.status >= 500) {
           console.log('💾 Server error - queuing for retry');
           await this.addToRetryQueue(payload);
         }
-        
+
         return false;
       }
     } catch (error) {
       console.error('❌ Error sending session to backend:', error);
-      
+
       // On network errors, save to retry queue
       console.log('💾 Network error - saving session for later');
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const timezone = this.getTimezone();
       const sessionStart = this.sessionStartTime || new Date(sessionEnd.getTime() - (durationSeconds * 1000));
-      
+
       await this.addToRetryQueue({
         sessionStartTime: sessionStart.toISOString(),
         sessionEndTime: sessionEnd.toISOString(),
@@ -553,7 +567,7 @@ class AppSessionTracker {
         timezone,
         activities: activities || (this.activities.length > 0 ? this.activities : undefined)
       });
-      
+
       return false;
     }
   }
@@ -615,10 +629,10 @@ class AppSessionTracker {
       if (response.ok) {
         const result: SessionResponse = await response.json();
         console.log('✅ Session data fetched');
-        
+
         // Cache the data
         await this.cacheSessionData(result.data);
-        
+
         return result.data;
       } else {
         console.log('⚠️ Could not fetch from server, using cached data');
