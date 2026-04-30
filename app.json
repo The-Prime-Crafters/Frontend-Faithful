@@ -1,8 +1,11 @@
 {
   "expo": {
-    "name": "faithful-companion",
+    "name": "Faithful Companion",
     "slug": "faithful-companion",
     "version": "1.0.0",
+    "description": "Your daily companion for Bible study, prayer, and spiritual growth. Join study groups, track your faith journey, and connect with a community of believers.",
+    "privacy": "public",
+    "primaryColor": "#7b4d62",
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -12,11 +15,19 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "jsEngine": "jsc",
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.faithfulcompanion.app",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "This app uses the camera to update your profile picture.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photos to update your profile picture.",
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "faithfulcompanion",
@@ -29,6 +40,7 @@
     },
     "android": {
       "package": "com.faithfulcompanion.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
@@ -40,6 +52,11 @@
           "autoVerify": true,
           "data": [
             {
+              "scheme": "https",
+              "host": "faithfulcompanion.ai",
+              "pathPrefix": "/auth/callback"
+            },
+            {
               "scheme": "faithfulcompanion"
             }
           ],
@@ -50,7 +67,9 @@
         }
       ],
       "permissions": [
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
       ]
     },
     "notification": {
@@ -82,6 +101,12 @@
     },
     "extra": {
       "router": {},
+      "supportEmail": "support@faithfulcompanion.ai",
+      "privacyPolicyUrl": "https://faithfulcompanion.ai/privacy",
+      "termsOfServiceUrl": "https://faithfulcompanion.ai/terms"
+    },
+    "hooks": {
+      "postPublish": []
     }
   }
 }

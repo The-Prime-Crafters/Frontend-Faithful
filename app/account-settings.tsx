@@ -165,6 +165,93 @@ export default function AccountSettings() {
     }
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      '⚠️ Delete Account',
+      'Are you absolutely sure you want to delete your account?\n\n' +
+      'This action will:\n' +
+      '• Permanently delete all your data\n' +
+      '• Remove all prayer requests\n' +
+      '• Delete chat history\n' +
+      '• Remove you from study groups\n' +
+      '• Cannot be undone\n\n' +
+      'This action is PERMANENT and IRREVERSIBLE.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete Forever',
+          style: 'destructive',
+          onPress: () => confirmDeleteAccount(),
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    try {
+      showLoading('Deleting account...');
+
+      const token = await SecureStore.getItemAsync('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Please sign in again');
+        hideLoading();
+        return;
+      }
+
+      console.log('🗑️ Deleting user account...');
+      const response = await fetch(API_ENDPOINTS.USERS_DELETE_ACCOUNT, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        console.log('✅ Account deleted successfully');
+
+        // Clear all local data
+        await SecureStore.deleteItemAsync('authToken');
+        await SecureStore.deleteItemAsync('userData');
+        await SecureStore.deleteItemAsync('userUsageData');
+        await SecureStore.deleteItemAsync('userVoiceId');
+        await SecureStore.deleteItemAsync('lastPrayerFetch');
+        await SecureStore.deleteItemAsync('cachedPrayers');
+
+        hideLoading();
+
+        // Show success message
+        Alert.alert(
+          'Account Deleted',
+          'Your account and all data have been permanently deleted. We\'re sorry to see you go.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Redirect to onboarding
+                router.replace('/(main)/onboarding');
+              },
+            },
+          ]
+        );
+      } else {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete account');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting account:', error);
+      hideLoading();
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to delete account. Please try again or contact support.'
+      );
+    }
+  };
+
   const loadUserPreferences = async () => {
     try {
       showLoading('Loading preferences...');
@@ -569,6 +656,22 @@ export default function AccountSettings() {
               <Text style={styles.settingValue}>{preferences.denomination || 'Not set'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={DARK_GRAY} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Danger Zone Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Danger Zone</Text>
+          <Text style={styles.dangerZoneDescription}>
+            Once you delete your account, there is no going back. Please be certain.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={handleDeleteAccount}
+          >
+            <Ionicons name="trash" size={20} color="#fff" />
+            <Text style={styles.deleteAccountText}>Delete My Account</Text>
           </TouchableOpacity>
         </View>
 
@@ -998,6 +1101,29 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     textAlign: 'center',
     marginTop: 16,
+  },
+  dangerZoneDescription: {
+    color: '#6c757d',
+    fontSize: 14,
+    fontFamily: 'serif',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  deleteAccountButton: {
+    backgroundColor: '#dc3545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    gap: 8,
+  },
+  deleteAccountText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'serif',
   },
 });
 
