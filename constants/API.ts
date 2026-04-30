@@ -53,6 +53,7 @@ export const API_ENDPOINTS = {
   USERS_EMAIL: `${API_BASE_URL}/api/users/email`,
   USERS_PREFERENCES: `${API_BASE_URL}/api/users/preferences`,
   USERS_PROFILE_COMPLETION: `${API_BASE_URL}/api/users/profile-completion`,
+  USERS_DELETE_ACCOUNT: `${API_BASE_URL}/api/users/account`,
   
   // App Session & Tracking
   APP_SESSION: `${API_BASE_URL}/api/users/app-session`,

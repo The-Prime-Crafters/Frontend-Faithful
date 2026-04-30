@@ -1,9 +1,0 @@
-export async function fetchDailyVerse(signal: AbortSignal) {
-  // ...fetch logic...
-}
-export async function fetchDailyPrayer(signal: AbortSignal) {
-  // ...fetch logic...
-}
-export async function fetchDailyReflection(signal: AbortSignal) {
-  // ...fetch logic...
-}

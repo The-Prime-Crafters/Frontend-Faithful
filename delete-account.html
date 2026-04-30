@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Your Account - Faithful Companion</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #7b4d62 0%, #ce703f 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #7b4d62;
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: #6c757d;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .method {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border-left: 4px solid #7b4d62;
+        }
+        
+        .method h2 {
+            color: #7b4d62;
+            font-size: 20px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .badge {
+            background: #ce703f;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .steps {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+        
+        .steps li {
+            counter-increment: step-counter;
+            margin-bottom: 12px;
+            padding-left: 35px;
+            position: relative;
+            color: #495057;
+            line-height: 1.6;
+        }
+        
+        .steps li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: #7b4d62;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            color: #856404;
+        }
+        
+        .warning-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .danger-list {
+            list-style: none;
+            margin-top: 8px;
+        }
+        
+        .danger-list li {
+            padding-left: 20px;
+            margin-bottom: 4px;
+            position: relative;
+        }
+        
+        .danger-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .email-button {
+            display: inline-block;
+            background: #7b4d62;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background 0.3s;
+            margin-top: 12px;
+        }
+        
+        .email-button:hover {
+            background: #8b5a73;
+        }
+        
+        .contact {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+        }
+        
+        .contact a {
+            color: #7b4d62;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🗑️</div>
+        <h1>Delete Your Account</h1>
+        <p class="subtitle">Faithful Companion</p>
+        
+        <div class="warning">
+            <div class="warning-title">⚠️ Important: This Action is Permanent</div>
+            <p>Deleting your account will permanently remove:</p>
+            <ul class="danger-list">
+                <li>Your profile and personal information</li>
+                <li>All prayer requests and responses</li>
+                <li>Chat history with AI companion</li>
+                <li>Study group memberships</li>
+                <li>Progress tracking and streaks</li>
+                <li>All saved preferences</li>
+            </ul>
+            <p style="margin-top: 12px; font-weight: bold;">This action cannot be undone.</p>
+        </div>
+        
+        <div class="method">
+            <h2>
+                <span>Method 1:</span>
+                <span class="badge">RECOMMENDED</span>
+            </h2>
+            <p style="margin-bottom: 12px; color: #495057;">Delete directly from the mobile app</p>
+            <ol class="steps">
+                <li>Open the <strong>Faithful Companion</strong> app</li>
+                <li>Go to the <strong>Profile</strong> tab</li>
+                <li>Tap <strong>Account Settings</strong></li>
+                <li>Scroll down to the <strong>Danger Zone</strong> section</li>
+                <li>Tap <strong>"Delete My Account"</strong></li>
+                <li>Confirm deletion when prompted</li>
+            </ol>
+            <p style="margin-top: 12px; color: #6c757d; font-size: 14px;">
+                ✓ Instant deletion<br>
+                ✓ No waiting period
+            </p>
+        </div>
+        
+        <div class="method">
+            <h2>Method 2: Email Support</h2>
+            <p style="margin-bottom: 12px; color: #495057;">Request deletion via email</p>
+            <ol class="steps">
+                <li>Send an email to our support team</li>
+                <li>Include your account email address</li>
+                <li>Subject: "Account Deletion Request"</li>
+                <li>We'll process your request within 48 hours</li>
+                <li>You'll receive confirmation when complete</li>
+            </ol>
+            <a href="mailto:support@faithfulcompanion.ai?subject=Account%20Deletion%20Request&body=I%20would%20like%20to%20delete%20my%20Faithful%20Companion%20account.%0A%0AAccount%20Email:%20%0A%0AThank%20you." 
+               class="email-button">
+                📧 Send Deletion Request
+            </a>
+        </div>
+        
+        <div class="contact">
+            <p>Questions about account deletion?</p>
+            <p>Contact us: <a href="mailto:support@faithfulcompanion.ai">support@faithfulcompanion.ai</a></p>
+            <p style="margin-top: 20px; font-size: 14px;">
+                <a href="https://faithfulcompanion.ai/privacy">Privacy Policy</a> | 
+                <a href="https://faithfulcompanion.ai/terms">Terms of Service</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

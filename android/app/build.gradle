@@ -66,7 +66,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: false).toBoolean()
+def enableProguardInReleaseBuilds = true // Enable ProGuard for production
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -92,8 +92,8 @@ android {
         applicationId 'com.faithfulcompanion.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 7
+        versionName "1.0.7"
     }
     signingConfigs {
         debug {
@@ -102,19 +102,32 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Production signing - EAS Build will handle this
+            // For manual builds, set these properties in gradle.properties:
+            // MYAPP_RELEASE_STORE_FILE=faithful-companion-release.keystore
+            // MYAPP_RELEASE_KEY_ALIAS=faithful-companion
+            // MYAPP_RELEASE_STORE_PASSWORD=your_store_password
+            // MYAPP_RELEASE_KEY_PASSWORD=your_key_password
+            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
+                storeFile file(MYAPP_RELEASE_STORE_FILE)
+                storePassword MYAPP_RELEASE_STORE_PASSWORD
+                keyAlias MYAPP_RELEASE_KEY_ALIAS
+                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
-            shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
+            // Use release signing if available, fallback to debug for testing
+            signingConfig signingConfigs.release ?: signingConfigs.debug
+            shrinkResources true // Enable resource shrinking
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-            crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
+            crunchPngs true // Optimize PNG files
         }
     }
     packagingOptions {
