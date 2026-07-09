@@ -101,15 +101,16 @@
     },
     "extra": {
       "router": {},
-      "eas": {
-        "projectId": "YOUR_PROJECT_ID_HERE"
-      },
       "supportEmail": "support@faithfulcompanion.ai",
       "privacyPolicyUrl": "https://faithfulcompanion.ai/privacy",
-      "termsOfServiceUrl": "https://faithfulcompanion.ai/terms"
+      "termsOfServiceUrl": "https://faithfulcompanion.ai/terms",
+      "eas": {
+        "projectId": "81ecffeb-90c8-4fd3-afc8-33a52ef50538"
+      }
     },
     "hooks": {
       "postPublish": []
-    }
+    },
+    "owner": "expo-subhan"
   }
 }

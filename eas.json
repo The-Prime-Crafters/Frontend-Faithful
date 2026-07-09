@@ -9,12 +9,22 @@
       "android": {
         "gradleCommand": ":app:assembleDebug",
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_OPENAI_API_KEY": "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",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyCBdwZ1RxJQUdSi44t-KsZ5TyWE-j5qIvA",
+        "EXPO_PUBLIC_API_BASE_URL": "https://faithfulcompanion.ai"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_OPENAI_API_KEY": "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",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyCBdwZ1RxJQUdSi44t-KsZ5TyWE-j5qIvA",
+        "EXPO_PUBLIC_API_BASE_URL": "https://faithfulcompanion.ai"
       }
     },
     "production": {
@@ -23,8 +33,9 @@
         "gradleCommand": ":app:bundleRelease"
       },
       "env": {
-        "EXPO_PUBLIC_OPENAI_API_KEY": "",
-        "EXPO_PUBLIC_GEMINI_API_KEY": ""
+        "EXPO_PUBLIC_OPENAI_API_KEY": "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",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyCBdwZ1RxJQUdSi44t-KsZ5TyWE-j5qIvA",
+        "EXPO_PUBLIC_API_BASE_URL": "https://faithfulcompanion.ai"
       }
     }
   },
