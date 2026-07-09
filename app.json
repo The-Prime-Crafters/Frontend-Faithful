@@ -103,10 +103,10 @@
       "router": {},
       "supportEmail": "support@faithfulcompanion.ai",
       "privacyPolicyUrl": "https://faithfulcompanion.ai/privacy",
-      "termsOfServiceUrl": "https://faithfulcompanion.ai/terms"
+      "termsOfServiceUrl": "https://faithfulcompanion.ai/terms",
     },
     "hooks": {
       "postPublish": []
-    }
+    },
   }
 }
