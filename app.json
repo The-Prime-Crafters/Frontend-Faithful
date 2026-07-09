@@ -13,7 +13,6 @@
     "icon": "./assets/images/logo.png",
     "scheme": "faithfulcompanion",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "jsEngine": "jsc",
     "splash": {
       "image": "./assets/images/logo.png",

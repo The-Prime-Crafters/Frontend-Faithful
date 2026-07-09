@@ -10,7 +10,7 @@ import { Stack, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import 'react-native-reanimated';
+import './reanimated-init';
 
 export default function RootLayout() {
   const router = useRouter();
