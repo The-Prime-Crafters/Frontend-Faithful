@@ -36,7 +36,7 @@ const BackButton: React.FC<BackButtonProps> = ({
     >
       <View style={styles.iconContainer}>
         <AntDesign 
-          name="arrowleft" 
+          name="arrow-left" 
           size={iconSize} 
           color={iconColor} 
         />

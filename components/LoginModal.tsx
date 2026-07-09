@@ -74,9 +74,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ visible, onClose, onLogin }) =>
       
       // Close modal (success message will be shown by parent)
       onClose();
-    } catch (error) {
-      // Error handling is done by the parent component
-      console.error('Login error in modal:', error);
+    } catch {
+      // Error handling (Alert) is done by the parent component
     } finally {
       setIsLoading(false);
     }
@@ -159,7 +158,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ visible, onClose, onLogin }) =>
                       style={styles.eyeButton}
                     >
                       <AntDesign
-                        name={showPassword ? 'eye' : 'eyeo'}
+                        name={showPassword ? 'eye' : 'eye-invisible'}
                         size={20}
                         color={PRIMARY_COLOR}
                       />
@@ -180,7 +179,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ visible, onClose, onLogin }) =>
                     end={{ x: 1, y: 0 }}
                   >
                     {isLoading ? (
-                      <AntDesign name="loading1" size={20} color={PRIMARY_COLOR} />
+                      <AntDesign name="loading" size={20} color={PRIMARY_COLOR} />
                     ) : (
                       <AntDesign name="login" size={20} color={PRIMARY_COLOR} />
                     )}

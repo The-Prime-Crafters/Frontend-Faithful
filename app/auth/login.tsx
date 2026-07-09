@@ -246,7 +246,7 @@ const LoginScreen = () => {
                     style={styles.eyeButton}
                   >
                     <AntDesign
-                      name={showPassword ? 'eye' : 'eyeo'}
+                      name={showPassword ? 'eye' : 'eye-invisible'}
                       size={20}
                       color={PRIMARY_COLOR}
                     />
@@ -267,7 +267,7 @@ const LoginScreen = () => {
                   end={{ x: 1, y: 0 }}
                 >
                   {isLoading ? (
-                    <AntDesign name="loading1" size={20} color={PRIMARY_COLOR} />
+                    <AntDesign name="loading" size={20} color={PRIMARY_COLOR} />
                   ) : (
                     <AntDesign name="login" size={20} color={PRIMARY_COLOR} />
                   )}

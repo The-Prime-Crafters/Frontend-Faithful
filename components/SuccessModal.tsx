@@ -105,7 +105,7 @@ const SuccessModal: React.FC<SuccessModalProps> = ({
             {/* Success Icon with pulse animation */}
             <View style={styles.iconContainer}>
               <View style={styles.iconCircle}>
-                <AntDesign name="checkcircle" size={64} color={WHITE} />
+                <AntDesign name="check-circle" size={64} color={WHITE} />
               </View>
             </View>
 
@@ -117,9 +117,9 @@ const SuccessModal: React.FC<SuccessModalProps> = ({
 
             {/* Decorative elements */}
             <View style={styles.sparklesContainer}>
-              <AntDesign name="staro" size={16} color="rgba(255,255,255,0.6)" style={styles.sparkle1} />
-              <AntDesign name="staro" size={12} color="rgba(255,255,255,0.4)" style={styles.sparkle2} />
-              <AntDesign name="staro" size={14} color="rgba(255,255,255,0.5)" style={styles.sparkle3} />
+              <AntDesign name="star" size={16} color="rgba(255,255,255,0.6)" style={styles.sparkle1} />
+              <AntDesign name="star" size={12} color="rgba(255,255,255,0.4)" style={styles.sparkle2} />
+              <AntDesign name="star" size={14} color="rgba(255,255,255,0.5)" style={styles.sparkle3} />
             </View>
           </LinearGradient>
         </Animated.View>

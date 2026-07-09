@@ -194,7 +194,7 @@ const EmailSignupModal: React.FC<EmailSignupModalProps> = ({ visible, onClose, o
                       style={styles.eyeButton}
                     >
                       <AntDesign
-                        name={showPassword ? 'eye' : 'eyeo'}
+                        name={showPassword ? 'eye' : 'eye-invisible'}
                         size={20}
                         color={PRIMARY_COLOR}
                       />
@@ -222,7 +222,7 @@ const EmailSignupModal: React.FC<EmailSignupModalProps> = ({ visible, onClose, o
                       style={styles.eyeButton}
                     >
                       <AntDesign
-                        name={showConfirmPassword ? 'eye' : 'eyeo'}
+                        name={showConfirmPassword ? 'eye' : 'eye-invisible'}
                         size={20}
                         color={PRIMARY_COLOR}
                       />
@@ -243,7 +243,7 @@ const EmailSignupModal: React.FC<EmailSignupModalProps> = ({ visible, onClose, o
                     end={{ x: 1, y: 0 }}
                   >
                     {isLoading ? (
-                      <AntDesign name="loading1" size={20} color={PRIMARY_COLOR} />
+                      <AntDesign name="loading" size={20} color={PRIMARY_COLOR} />
                     ) : (
                       <AntDesign name="user" size={20} color={PRIMARY_COLOR} />
                     )}
